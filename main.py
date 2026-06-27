@@ -15,12 +15,11 @@ import json
 import asyncio
 import pickle
 import subprocess
-import math
-import calendar
 import urllib.parse
 from collections import deque
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
+import dashboard_widgets
 from logging.handlers import RotatingFileHandler
 
 # --- GMAIL IMPORTS ---
@@ -53,6 +52,39 @@ ENABLE_CLAUDE = False
 ENABLE_OPENAI = False
 ENABLE_SPOTIFY = False
 
+# --- DYNAMIC WIDGET SLOTS ---
+# Each slot keeps today's first-available fallback behavior by default.
+# Set rotate=True per slot to cycle through every currently available widget.
+WIDGET_SLOTS = {
+    'left_top': {
+        'widgets': ('strava', 'sysload'),
+        'rotate': False,
+        'seconds': 300
+    },
+    'left_middle': {
+        'widgets': ('bambu', 'crypto'),
+        'rotate': False,
+        'seconds': 300
+    },
+    'left_bottom': {
+        'widgets': ('roborock', 'antigravity', 'ping'),
+        'rotate': False,
+        'seconds': 300
+    },
+    'right_middle': {
+        'widgets': ('ai_usage', 'spotify', 'time_progress'),
+        'rotate': False,
+        'seconds': 300
+    }
+}
+
+
+def widget_slot_can_show(widget_id):
+    for slot in WIDGET_SLOTS.values():
+        widgets = slot.get('widgets', ())
+        if widget_id in widgets and (slot.get('rotate', False) or widgets[0] == widget_id):
+            return True
+    return False
 # --- API ENDPOINTS ---
 API_ENDPOINTS = {
     'weather': 'https://api.open-meteo.com/v1/forecast',
@@ -632,7 +664,7 @@ def update_data_thread():
                 if s_data:
                     with data_store.lock: data_store.strava = s_data
                 data_store.last_update['strava'] = now
-        else:
+        if (not ENABLE_STRAVA) or widget_slot_can_show('sysload'):
             if now - data_store.last_update['sysload'] > 30:
                 try:
                     with open('/proc/loadavg', 'r') as f:
@@ -686,7 +718,7 @@ def update_data_thread():
                     with data_store.lock:
                         data_store.printer['status'] = 'OFFLINE'
                 data_store.last_update['printer'] = now
-        else:
+        if (not ENABLE_BAMBU) or widget_slot_can_show('crypto'):
             if now - data_store.last_update['crypto'] > 600:
                 btc_url = f"{API_ENDPOINTS['btc']}?vs_currency=usd&days=7"
                 eth_url = f"{API_ENDPOINTS['eth']}?vs_currency=usd&days=7"
@@ -705,7 +737,7 @@ def update_data_thread():
                             data_store.crypto['eth_hist'] = prices[::len(prices) // 50][:50]
                 data_store.last_update['crypto'] = now
 
-        if not ENABLE_ROBOROCK and not ENABLE_ANTIGRAVITY:
+        if (not ENABLE_ROBOROCK and not ENABLE_ANTIGRAVITY) or widget_slot_can_show('ping'):
             if now - data_store.last_update['ping'] > 20:
                 try:
                     out = subprocess.check_output(['ping', '-c', '1', '-W', '1', '8.8.8.8']).decode('utf-8')
@@ -886,455 +918,131 @@ def get_weather_icon(code, is_day=1):
     return "icon_sun"
 
 
+def snapshot_data_store():
+    if not data_store.lock.acquire(timeout=2.0):
+        return None
+
+    try:
+        sysload = data_store.sysload.copy()
+        sysload['history'] = list(sysload.get('history', []))
+        ping = data_store.ping.copy()
+        ping['history'] = list(ping.get('history', []))
+
+        return {
+            'weather': data_store.weather.copy(),
+            'aqi': data_store.aqi,
+            'strava': data_store.strava.copy(),
+            'printer': data_store.printer.copy(),
+            'roborock': data_store.roborock.copy(),
+            'gmail_unread': data_store.gmail_unread,
+            'spotify': data_store.spotify.copy(),
+            'claude': data_store.claude.copy(),
+            'openai': data_store.openai.copy(),
+            'antigravity': data_store.antigravity.copy(),
+            'sysload': sysload,
+            'crypto': data_store.crypto.copy(),
+            'ping': ping,
+            'now': datetime.now()
+        }
+    finally:
+        data_store.lock.release()
+
+
+def is_widget_available(widget_id):
+    if widget_id == 'strava':
+        return ENABLE_STRAVA
+    if widget_id == 'bambu':
+        return ENABLE_BAMBU
+    if widget_id == 'roborock':
+        return ENABLE_ROBOROCK
+    if widget_id == 'antigravity':
+        return ENABLE_ANTIGRAVITY
+    if widget_id == 'ai_usage':
+        return ENABLE_CLAUDE or ENABLE_OPENAI
+    if widget_id == 'spotify':
+        return ENABLE_SPOTIFY
+    return widget_id in ('sysload', 'crypto', 'ping', 'time_progress')
+
+
+def choose_slot_widget(slot_name, now_ts=None):
+    slot = WIDGET_SLOTS.get(slot_name, {})
+    widgets = slot.get('widgets', ())
+    available = [widget_id for widget_id in widgets if is_widget_available(widget_id)]
+    if not available:
+        return None
+
+    if not slot.get('rotate', False):
+        return available[0]
+
+    try:
+        seconds = max(1, int(slot.get('seconds', 300)))
+    except (TypeError, ValueError):
+        seconds = 300
+
+    if now_ts is None:
+        now_ts = time.time()
+    return available[int(now_ts // seconds) % len(available)]
+
+
+def get_widget_slot_rects(epd):
+    col_w = epd.width // 3
+    col1_x = 20
+    col2_x = col_w + 20
+    col3_x = col_w * 2 + 30
+    return {
+        'left_top': (col1_x, 20, col_w - 20, 145),
+        'left_middle': (col1_x, 170, col_w - 20, 315),
+        'left_bottom': (col1_x, 340, col_w - 20, 470),
+        'weather': (col2_x, 10, col_w * 2 - 20, 470),
+        'clock': (col3_x, 10, epd.width - 20, 220),
+        'right_middle': (col3_x, 240, epd.width - 20, 370),
+        'gmail': (col3_x, 400, epd.width - 20, 470)
+    }
+
+
 def render_screen(epd, fonts):
     Himage = Image.new('1', (epd.width, epd.height), 255)
     draw = ImageDraw.Draw(Himage)
 
-    if not data_store.lock.acquire(timeout=2.0): return Himage
-    try:
-        weather = data_store.weather.copy()
-        aqi = data_store.aqi
-        strava = data_store.strava.copy()
-        printer = data_store.printer.copy()
-        rob = data_store.roborock.copy()
-        gmail_unread = data_store.gmail_unread
-        spotify = data_store.spotify.copy()
-        claude = data_store.claude.copy()
-        openai = data_store.openai.copy()
-        antigravity = data_store.antigravity.copy()
-        sysload = data_store.sysload.copy()
-        crypto = data_store.crypto.copy()
-        ping = data_store.ping.copy()
-    finally:
-        data_store.lock.release()
+    state = snapshot_data_store()
+    if state is None:
+        return Himage
 
     col_w = epd.width // 3
-
-    # --- COLUMN 1 (Widgets) ---
     col1_x = 20
+    col2_x = col_w + 20
+    col3_x = col_w * 2 + 30
+    slot_rects = get_widget_slot_rects(epd)
+    now_ts = time.time()
 
-    # Widget 1: Strava or SysLoad
-    y1 = 20
-    if ENABLE_STRAVA:
-        draw_icon(draw, col1_x, y1, "icon_strava", (60, 60))
-        draw.text((col1_x + 70, y1), "STRAVA STATS", font=fonts['28'], fill=0)
+    dashboard_widgets.configure(
+        draw_icon, draw_sparkline, get_weather_icon, time_until,
+        compact_number, format_model_label, format_window_label,
+        OPENAI_CONF, ENABLE_CLAUDE, ENABLE_OPENAI
+    )
 
-        now_y = datetime.now().year
-        draw.text((col1_x + 70, y1 + 35),
-                  f"{now_y}: {strava.get('distance_curr', 0)} km | {now_y - 1}: {strava.get('distance_prev', 0)} km",
-                  font=fonts['20'], fill=0)
-        draw.text((col1_x + 70, y1 + 60),
-                  f"Total: {strava.get('total_distance', 0)} km | {strava.get('rides', 0)} acts", font=fonts['20'],
-                  fill=0)
-
-        draw_icon(draw, col1_x + 70, y1 + 85, "icon_bike", (30, 30))
-        draw.text((col1_x + 105, y1 + 90), f"{strava.get('bike_total', 0)} km", font=fonts['20'], fill=0)
-
-        draw_icon(draw, col1_x + 220, y1 + 85, "icon_hike", (30, 30))
-        draw.text((col1_x + 255, y1 + 90), f"{strava.get('hike_total', 0)} km", font=fonts['20'], fill=0)
-
-    else:
-        draw_icon(draw, col1_x, y1, "icon_cpu", (50, 50))
-        draw.text((col1_x + 60, y1), f"SYSTEM LOAD: {sysload['cpu']}%", font=fonts['28'], fill=0)
-        draw.text((col1_x + 60, y1 + 35), f"RAM Free: {sysload['ram_free']} MB", font=fonts['20'], fill=0)
-        draw_sparkline(draw, col1_x + 60, y1 + 60, list(sysload['history']), max_items=30, width=350, height=40,
-                       style="bar")
-
+    dashboard_widgets.draw_slot(choose_slot_widget('left_top', now_ts), Himage, draw, fonts, state, col1_x, 20, clear_rect=slot_rects['left_top'])
     draw.line((col1_x, 150, col_w - 20, 150), fill=0, width=2)
 
-    # Widget 2: Bambu or Crypto
-    y2 = 170
-    if ENABLE_BAMBU:
-        p_status = str(printer.get('status', 'OFFLINE')).upper()
-        draw_icon(draw, col1_x, y2, "icon_3d", (60, 60))
-        draw.text((col1_x + 70, y2), f"PRINTER: {p_status}", font=fonts['28'], fill=0)
-        if p_status not in ["OFFLINE", "UNKNOWN", "FINISH"]:
-            percent = printer.get('percentage', 0)
-            draw.rectangle((col1_x + 70, y2 + 40, col1_x + 400, y2 + 60), outline=0)
-            draw.rectangle((col1_x + 70, y2 + 40, col1_x + 70 + int(330 * (percent / 100)), y2 + 60), fill=0)
-            draw.text((col1_x + 70, y2 + 70),
-                      f"{percent}% | Rem: {printer.get('remaining_time', '0')}m | {printer.get('layers', '0/0')} L",
-                      font=fonts['20'], fill=0)
-    else:
-        draw_icon(draw, col1_x, y2, "icon_btc", (50, 50))
-        draw.text((col1_x + 60, y2), f"BTC: ${crypto['btc']}", font=fonts['28'], fill=0)
-        draw_sparkline(draw, col1_x + 60, y2 + 35, crypto['btc_hist'], max_items=50, width=350, height=35, style="bar")
-
-        draw_icon(draw, col1_x, y2 + 80, "icon_eth", (50, 50))
-        draw.text((col1_x + 60, y2 + 80), f"ETH: ${crypto['eth']}", font=fonts['28'], fill=0)
-        draw_sparkline(draw, col1_x + 60, y2 + 115, crypto['eth_hist'], max_items=50, width=350, height=35, style="bar")
-
+    dashboard_widgets.draw_slot(choose_slot_widget('left_middle', now_ts), Himage, draw, fonts, state, col1_x, 170, clear_rect=slot_rects['left_middle'])
     draw.line((col1_x, 320, col_w - 20, 320), fill=0, width=2)
 
-    # Widget 3: Roborock or Ping
-    y3 = 340
-    if ENABLE_ROBOROCK:
-        draw_icon(draw, col1_x, y3, "icon_roborock", (50, 50))
-        draw.text((col1_x + 60, y3), f"Bat: {rob['battery']}% | {rob['status']}", font=fonts['28'], fill=0)
-        if rob['is_cleaning']:
-            draw.text((col1_x + 60, y3 + 35), f"Clean: {rob['current_area']:.1f} m2 ({rob['pct']:.0f}%)",
-                      font=fonts['24'], fill=0)
-            clamped_pct = min(rob['pct'], 100)
-            draw.rectangle((col1_x + 60, y3 + 70, col1_x + 390, y3 + 90), outline=0)
-            draw.rectangle((col1_x + 60, y3 + 70, col1_x + 60 + int(330 * (clamped_pct / 100)), y3 + 90), fill=0)
-        else:
-            draw.text((col1_x + 60, y3 + 35), f"Last: {rob['last_date']} | {rob['ref_area']:.1f} m2", font=fonts['24'],
-                      fill=0)
-    elif ENABLE_ANTIGRAVITY:
-        draw_icon(draw, col1_x, y3, "icon_cpu", (50, 50))
-        draw.text((col1_x + 60, y3), "ANTIGRAVITY USAGE", font=fonts['28'], fill=0)
-        
-        if antigravity.get('error'):
-            draw.text((col1_x + 60, y3 + 35), "Error loading data", font=fonts['20'], fill=0)
-        else:
-            models = antigravity.get('models', [])
-            opus = next((m for m in models if m.get('modelId') == 'claude-opus-4-6-thinking'), None)
-            gemini = next((m for m in models if m.get('modelId') == 'gemini-3-pro-high'), None)
-            
-            y_off = y3 + 35
-            for m_data in (opus, gemini):
-                if m_data:
-                    label = "Opus 4.6" if m_data.get('modelId') == 'claude-opus-4-6-thinking' else "Gemini 3Pro"
-                    pct = m_data.get('usedPercentage', 0)
-                    rem_time = time_until(m_data.get('resetDate'))
-                    
-                    draw.text((col1_x + 60, y_off), f"{label} {pct}% | In {rem_time}", font=fonts['20'], fill=0)
-                    
-                    bx, bw, bh = col1_x + 60, 330, 15
-                    draw.rectangle((bx, y_off + 25, bx + bw, y_off + 25 + bh), outline=0, width=2)
-                    fill_w = int((bw - 4) * min(pct / 100.0, 1.0))
-                    if fill_w > 0: draw.rectangle((bx + 2, y_off + 27, bx + 2 + fill_w, y_off + 25 + bh - 2), fill=0)
-                    
-                    y_off += 50
-    else:
-        draw_icon(draw, col1_x, y3, "icon_wifi", (50, 50))
-        draw.text((col1_x + 60, y3), f"Internet Quality: {ping['current']} ms", font=fonts['28'], fill=0)
-        draw_sparkline(draw, col1_x, y3 + 60, list(ping['history']), max_items=50, width=400, height=40, style="bar")
-
+    dashboard_widgets.draw_slot(choose_slot_widget('left_bottom', now_ts), Himage, draw, fonts, state, col1_x, 340, clear_rect=slot_rects['left_bottom'])
     draw.line((col_w, 10, col_w, 470), fill=0, width=2)
 
-    # --- COLUMN 2 (Weather) ---
-    col2_x = col_w + 20
-
-    if 'current' in weather:
-        cur = weather['current']
-        temp = cur.get('temperature_2m', 0)
-        hum = cur.get('relative_humidity_2m', 0)
-        pres = cur.get('surface_pressure', 0)
-        w_code = cur.get('weather_code', 0)
-        wind_dir = cur.get('wind_direction_10m', 0)
-        wind_spd = cur.get('wind_speed_10m', 0)
-        is_day = cur.get('is_day', 1)
-        uv_index = cur.get('uv_index', 0.0)
-
-        temp_rounded = math.floor(temp + 0.5)
-
-        draw_icon(draw, col2_x, 20, get_weather_icon(w_code, is_day), (90, 90))
-        draw.text((col2_x + 100, 10), f"{temp_rounded}°C", font=fonts['80'], fill=0)
-
-        uv_x, uv_y = col2_x + 320, 25
-        uv_rounded = math.floor(uv_index + 0.5)
-        draw.text((uv_x, uv_y), "UV", font=fonts['28'], fill=0)
-        uv_val_str = str(uv_rounded)
-        try:
-            bbox = draw.textbbox((0, 0), uv_val_str, font=fonts['60'])
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        except AttributeError:
-            tw, th = draw.textsize(uv_val_str, font=fonts['60'])
-
-        uv_val_x, uv_val_y = uv_x + 45, 5
-        if uv_rounded >= 6:
-            pad = 5
-            draw.rectangle((uv_val_x - pad, uv_val_y - pad + 10, uv_val_x + tw + pad, uv_val_y + th + pad), fill=0)
-            draw.text((uv_val_x, uv_val_y), uv_val_str, font=fonts['60'], fill=255)
-        else:
-            draw.text((uv_val_x, uv_val_y), uv_val_str, font=fonts['60'], fill=0)
-
-        draw.text((col2_x + 100, 95), f"Humidity: {hum}%", font=fonts['20'], fill=0)
-        draw.text((col2_x + 100, 120), f"Press: {pres} hPa", font=fonts['20'], fill=0)
-
-        draw.line((col2_x, 140, col2_x + col_w - 40, 140), fill=0, width=2)
-
-        y_c2 = 160
-        draw_icon(draw, col2_x + 5, y_c2, "icon_wind", (30, 30))
-
-        cx, cy, r = col2_x + 80, y_c2 + 80, 60
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=0, width=2)
-
-        for angle in range(0, 360, 45):
-            rad_tick = math.radians(angle)
-            inner_r = r - 8 if angle % 90 == 0 else r - 4
-            tx1, ty1 = cx + inner_r * math.cos(rad_tick), cy + inner_r * math.sin(rad_tick)
-            tx2, ty2 = cx + r * math.cos(rad_tick), cy + r * math.sin(rad_tick)
-            draw.line((tx1, ty1, tx2, ty2), fill=0, width=2)
-
-        draw.text((cx - 8, cy - r - 22), "N", font=fonts['20'], fill=0)
-        draw.text((cx - 8, cy + r + 4), "S", font=fonts['20'], fill=0)
-        draw.text((cx + r + 6, cy - 10), "E", font=fonts['20'], fill=0)
-        draw.text((cx - r - 24, cy - 10), "W", font=fonts['20'], fill=0)
-
-        rad_arrow = math.radians(wind_dir - 90)
-        tip_x = cx + (r - 12) * math.cos(rad_arrow)
-        tip_y = cy + (r - 12) * math.sin(rad_arrow)
-        base_angle = math.radians(150)
-        left_x = cx + 20 * math.cos(rad_arrow + base_angle)
-        left_y = cy + 20 * math.sin(rad_arrow + base_angle)
-        right_x = cx + 20 * math.cos(rad_arrow - base_angle)
-        right_y = cy + 20 * math.sin(rad_arrow - base_angle)
-        draw.polygon([(tip_x, tip_y), (left_x, left_y), (right_x, right_y)], fill=0)
-        draw.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=0)
-
-        spd_text = f"{wind_spd} km/h"
-        try:
-            bbox = draw.textbbox((0, 0), spd_text, font=fonts['20'])
-            tw = bbox[2] - bbox[0]
-        except AttributeError:
-            tw = draw.textsize(spd_text, font=fonts['20'])[0]
-
-        draw.text((cx - tw / 2, cy + 25), spd_text, font=fonts['20'], fill=0)
-
-        aqi_x = col2_x + 180
-        draw.text((aqi_x, y_c2 + 10), "AIR QUALITY", font=fonts['20'], fill=0)
-        draw.text((aqi_x, y_c2 + 55), "AQI:", font=fonts['28'], fill=0)
-
-        aqi_str = str(aqi)
-        try:
-            bbox = draw.textbbox((0, 0), aqi_str, font=fonts['80'])
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        except AttributeError:
-            tw, th = draw.textsize(aqi_str, font=fonts['80'])
-
-        val_x, val_y = aqi_x + 80, y_c2 + 66
-
-        if aqi >= 50:
-            pad = 20
-            draw.rectangle((val_x - pad, val_y - pad + 15, val_x + tw + pad, val_y + th + pad - 5), fill=0)
-            draw.text((val_x, val_y), aqi_str, font=fonts['80'], fill=255)
-        else:
-            draw.text((val_x, val_y), aqi_str, font=fonts['80'], fill=0)
-
-        draw.line((col2_x, 320, col2_x + col_w - 40, 320), fill=0, width=2)
-
-        hourly = weather.get('hourly', {})
-        times = hourly.get('time', [])
-        temps = hourly.get('temperature_2m', [])
-        codes = hourly.get('weather_code', [])
-
-        cur_iso = datetime.now().strftime("%Y-%m-%dT%H:00")
-        try:
-            start_idx = times.index(cur_iso) + 1
-        except:
-            start_idx = 0
-
-        for i in range(4):
-            idx = start_idx + i
-            if idx < len(times):
-                off_x = col2_x + (i * 105)
-                draw.text((off_x + 10, 340), f"{times[idx].split('T')[1][:5]}", font=fonts['24'], fill=0)
-                draw_icon(draw, off_x + 15, 375, get_weather_icon(codes[idx], 1), (60, 60))
-                f_temp = math.floor(temps[idx] + 0.5)
-                draw.text((off_x + 15, 440), f"{f_temp}°C", font=fonts['24'], fill=0)
-
+    dashboard_widgets.draw_weather_panel(draw, fonts, state, col2_x, col_w)
     draw.line((col_w * 2, 10, col_w * 2, 470), fill=0, width=2)
 
-    # --- COLUMN 3 (Time, Claude/Spotify/Progress, Gmail) ---
-    col3_x = col_w * 2 + 30
-    dt = datetime.now()
-
-    # 1. Time & Date
-    draw.text((col3_x, 10), dt.strftime("%H:%M"), font=fonts['clock'], fill=0)
-
-    date_str = dt.strftime("%d %B %Y")
-    day_str = dt.strftime("%a").upper()
-
-    draw.text((col3_x, 170), date_str, font=fonts['32'], fill=0)
-    draw.text((col3_x + 340, 170), day_str, font=fonts['32'], fill=0)
-
+    dashboard_widgets.draw_time_header(draw, fonts, state, col3_x)
     draw.line((col3_x, 220, epd.width - 20, 220), fill=0, width=2)
 
-    # 2. Claude / OpenAI OR Spotify OR Time Progress
-    sp_y = 240
-    # Clear background for widget
-    draw.rectangle((col3_x, sp_y, col3_x + 420, sp_y + 130), fill=255)
-
-    if ENABLE_CLAUDE and ENABLE_OPENAI:
-        draw.text((col3_x, sp_y), "AI PROVIDER USAGE", font=fonts['28'], fill=0)
-
-        if claude.get('error'):
-            draw.text((col3_x, sp_y + 35), "Claude: Usage unavailable", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 58), "Check claude_creds.json / usage.json", font=fonts['20'], fill=0)
-        else:
-            pct_5h = claude.get('five_hour', {}).get('utilization', 0)
-            pct_7d = claude.get('seven_day', {}).get('utilization', 0)
-            rem_5h = time_until(claude.get('five_hour', {}).get('resets_at'))
-            rem_7d = time_until(claude.get('seven_day', {}).get('resets_at'))
-            draw.text((col3_x, sp_y + 35), f"Claude 5h {pct_5h}% | 7d {pct_7d}%", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 58), f"Resets {rem_5h} / {rem_7d}", font=fonts['20'], fill=0)
-
-        openai_label = openai.get('label', OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'))
-        if openai.get('error'):
-            draw.text((col3_x, sp_y + 86), f"{openai_label}: Usage unavailable", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 109), "Check openai_creds.json / openai_usage.json", font=fonts['20'], fill=0)
-        else:
-            if openai.get('mode') == 'codex_chatgpt':
-                primary = openai.get('primary_window', {})
-                secondary = openai.get('secondary_window', {})
-                draw.text((col3_x, sp_y + 86),
-                          f"Codex {primary.get('used_percent', 0)}% | {secondary.get('used_percent', 0)}%",
-                          font=fonts['20'], fill=0)
-                plan = str(openai.get('plan_type', 'unknown')).upper()
-                draw.text((col3_x, sp_y + 109), f"Plan {plan} | Credits {openai.get('credits', {}).get('available_count', 0)}",
-                          font=fonts['20'], fill=0)
-            elif openai.get('mode') == 'codex_api_key':
-                draw.text((col3_x, sp_y + 86), "Codex API key mode active", font=fonts['20'], fill=0)
-                draw.text((col3_x, sp_y + 109), "Add admin key or ChatGPT sign-in for usage", font=fonts['20'], fill=0)
-            else:
-                openai_day = openai.get('window_24h', {})
-                top_model = next(iter(openai.get('models', [])), {})
-                total_tokens = openai_day.get('input_tokens', 0) + openai_day.get('output_tokens', 0)
-                draw.text((col3_x, sp_y + 86),
-                          f"{openai_label} 24h {openai_day.get('requests', 0)} req | {compact_number(total_tokens)} tok",
-                          font=fonts['20'], fill=0)
-                top_label = format_model_label(top_model.get('model'))
-                draw.text((col3_x, sp_y + 109), f"Top model: {top_label} {top_model.get('requests_7d', 0)} req / 7d",
-                          font=fonts['20'], fill=0)
-
-    elif ENABLE_CLAUDE:
-        draw.text((col3_x, sp_y), "CLAUDE AI USAGE", font=fonts['28'], fill=0)
-
-        if claude.get('error'):
-            draw.text((col3_x, sp_y + 50), "Claude Usage Error", font=fonts['24'], fill=0)
-        else:
-            # 5-Hour Limit
-            pct_5h = claude.get('five_hour', {}).get('utilization', 0)
-            resets_5h = claude.get('five_hour', {}).get('resets_at')
-            rem_5h = time_until(resets_5h)
-
-            draw.text((col3_x, sp_y + 40), f"5-Hour Limit: {pct_5h}% (Resets in {rem_5h})", font=fonts['20'], fill=0)
-            bx, bw, bh = col3_x, 400, 15
-            draw.rectangle((bx, sp_y + 65, bx + bw, sp_y + 65 + bh), outline=0, width=2)
-            fill_w = int((bw - 4) * min(pct_5h / 100.0, 1.0))
-            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 67, bx + 2 + fill_w, sp_y + 65 + bh - 2), fill=0)
-
-            # 7-Day Limit
-            pct_7d = claude.get('seven_day', {}).get('utilization', 0)
-            resets_7d = claude.get('seven_day', {}).get('resets_at')
-            rem_7d = time_until(resets_7d)
-
-            draw.text((col3_x, sp_y + 90), f"7-Day Limit: {pct_7d}% (Resets in {rem_7d})", font=fonts['20'], fill=0)
-            draw.rectangle((bx, sp_y + 115, bx + bw, sp_y + 115 + bh), outline=0, width=2)
-            fill_w = int((bw - 4) * min(pct_7d / 100.0, 1.0))
-            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 117, bx + 2 + fill_w, sp_y + 115 + bh - 2), fill=0)
-
-    elif ENABLE_OPENAI:
-        openai_label = openai.get('label', OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'))
-        draw.text((col3_x, sp_y), openai_label, font=fonts['28'], fill=0)
-
-        if openai.get('error'):
-            draw.text((col3_x, sp_y + 50), "OpenAI / Codex Usage Error", font=fonts['24'], fill=0)
-        elif openai.get('mode') == 'codex_chatgpt':
-            primary = openai.get('primary_window', {})
-            secondary = openai.get('secondary_window', {})
-            credits = openai.get('credits', {})
-
-            draw.text((col3_x, sp_y + 35), f"Plan: {str(openai.get('plan_type', 'unknown')).upper()}",
-                      font=fonts['20'], fill=0)
-
-            bx, bw, bh = col3_x, 400, 15
-
-            primary_label = format_window_label(primary.get('limit_window_seconds'))
-            primary_pct = primary.get('used_percent', 0)
-            draw.text((col3_x, sp_y + 58), f"{primary_label}: {primary_pct}% (Resets in {time_until(primary.get('reset_at'))})",
-                      font=fonts['20'], fill=0)
-            draw.rectangle((bx, sp_y + 82, bx + bw, sp_y + 82 + bh), outline=0, width=2)
-            fill_w = int((bw - 4) * min(primary_pct / 100.0, 1.0))
-            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 84, bx + 2 + fill_w, sp_y + 82 + bh - 2), fill=0)
-
-            secondary_label = format_window_label(secondary.get('limit_window_seconds'))
-            secondary_pct = secondary.get('used_percent', 0)
-            draw.text((col3_x, sp_y + 100),
-                      f"{secondary_label}: {secondary_pct}% (Resets in {time_until(secondary.get('reset_at'))})",
-                      font=fonts['20'], fill=0)
-            draw.rectangle((bx, sp_y + 124, bx + bw, sp_y + 124 + bh), outline=0, width=2)
-            fill_w = int((bw - 4) * min(secondary_pct / 100.0, 1.0))
-            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 126, bx + 2 + fill_w, sp_y + 124 + bh - 2), fill=0)
-        elif openai.get('mode') == 'codex_api_key':
-            draw.text((col3_x, sp_y + 35), "Codex is using API key mode.", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 60), "Plan/rate-limit data is only", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 85), "available with ChatGPT sign-in", font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 108), "or an OpenAI Admin API key.", font=fonts['20'], fill=0)
-        else:
-            usage_24h = openai.get('window_24h', {})
-            usage_7d = openai.get('window_7d', {})
-            models = openai.get('models', [])
-
-            total_24h_tokens = usage_24h.get('input_tokens', 0) + usage_24h.get('output_tokens', 0)
-            total_7d_tokens = usage_7d.get('input_tokens', 0) + usage_7d.get('output_tokens', 0)
-
-            draw.text((col3_x, sp_y + 35),
-                      f"24h: {usage_24h.get('requests', 0)} req | {compact_number(total_24h_tokens)} tok",
-                      font=fonts['20'], fill=0)
-            draw.text((col3_x, sp_y + 60),
-                      f"7d: {usage_7d.get('requests', 0)} req | {compact_number(total_7d_tokens)} tok",
-                      font=fonts['20'], fill=0)
-
-            for idx, m_data in enumerate(models[:2]):
-                label = format_model_label(m_data.get('model'))
-                y_off = sp_y + 85 + (idx * 23)
-                draw.text((col3_x, y_off), f"{label}: {m_data.get('requests_7d', 0)} req / 7d", font=fonts['20'], fill=0)
-
-    elif ENABLE_SPOTIFY:
-        if spotify['cover']:
-            Himage.paste(spotify['cover'], (col3_x, sp_y))
-        else:
-            draw_icon(draw, col3_x, sp_y, "icon_spotify", (120, 120))
-
-        status_ico = "icon_play" if spotify['status'] == 'PLAYING' else "icon_pause"
-        draw_icon(draw, col3_x + 140, sp_y + 10, status_ico, (30, 30))
-
-        if spotify['status'] == 'PLAYING':
-            words = spotify['text'].split(' - ')
-            artist = words[0] if len(words) > 0 else "Unknown"
-            track = words[1] if len(words) > 1 else ""
-            draw.text((col3_x + 180, sp_y + 10), artist[:20], font=fonts['28'], fill=0)
-            draw.text((col3_x + 140, sp_y + 50), track[:25], font=fonts['24'], fill=0)
-
-    else:
-        # Fallback: Time Progress
-        tp_y = sp_y
-        draw.text((col3_x, tp_y), "TIME PROGRESS", font=fonts['28'], fill=0)
-
-        day_pct = (dt.hour * 3600 + dt.minute * 60 + dt.second) / 86400.0
-        days_in_m = calendar.monthrange(dt.year, dt.month)[1]
-        month_pct = (dt.day - 1 + (dt.hour / 24.0)) / days_in_m
-        days_in_y = 366 if calendar.isleap(dt.year) else 365
-        year_pct = (dt.timetuple().tm_yday - 1 + (dt.hour / 24.0)) / days_in_y
-
-        def draw_prog(y_offset, label, pct):
-            draw.text((col3_x, tp_y + y_offset), label, font=fonts['24'], fill=0)
-            bx = col3_x + 110
-            bw = 200
-            bh = 20
-            draw.rectangle((bx, tp_y + y_offset + 2, bx + bw, tp_y + y_offset + bh + 2), outline=0, width=2)
-            if pct > 0:
-                fill_w = int((bw - 4) * min(pct, 1.0))
-                if fill_w > 0:
-                    draw.rectangle((bx + 2, tp_y + y_offset + 4, bx + 2 + fill_w, tp_y + y_offset + bh), fill=0)
-            draw.text((bx + bw + 15, tp_y + y_offset), f"{int(pct * 100)}%", font=fonts['24'], fill=0)
-
-        draw_prog(40, "DAY", day_pct)
-        draw_prog(75, "MONTH", month_pct)
-        draw_prog(110, "YEAR", year_pct)
-
+    dashboard_widgets.draw_slot(choose_slot_widget('right_middle', now_ts), Himage, draw, fonts, state, col3_x, 240,
+                                clear_rect=slot_rects['right_middle'])
     draw.line((col3_x, 380, epd.width - 20, 380), fill=0, width=2)
 
-    # 3. Gmail
-    gm_y = 400
-    draw_icon(draw, col3_x, gm_y, "icon_mail", (60, 60))
-    draw.text((col3_x + 80, gm_y + 10), f"Unread Inbox: {gmail_unread}", font=fonts['35'], fill=0)
+    dashboard_widgets.draw_gmail_widget(draw, fonts, state, col3_x, 400)
 
     return Himage
-
 
 # --- MAIN LOOP ---
 def main():

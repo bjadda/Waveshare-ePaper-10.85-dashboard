@@ -51,6 +51,22 @@ The **patched** version of the epd10in85 library with fixed partial refresh issu
 
 All widget toggles and API configurations are located at the top of the `main.py` script. You can enable or disable specific widgets using the `ENABLE_*` boolean variables.
 
+### Dynamic Widget Slots
+
+The dashboard now has named widget slots in `WIDGET_SLOTS` near the top of `main.py`, while widget drawing lives in `dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: False`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: True` and adjust `seconds` to cycle through all available widgets in that screen region.
+
+Example:
+
+```python
+'right_middle': {
+    'widgets': ('ai_usage', 'spotify', 'time_progress'),
+    'rotate': True,
+    'seconds': 300
+}
+```
+
+This rotates the right-middle area every five minutes while keeping the rest of the screen stable.
+
 ### Claude Code
 1. Run the `main.py` script from the terminal for the first time.
 2. The script will pause, ask for your to copy the authorization URL and paste it on real browser.
