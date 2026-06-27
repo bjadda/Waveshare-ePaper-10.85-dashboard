@@ -5,6 +5,7 @@ A fully functional E-ink dashboard running on a Raspberry Pi Zero 2W. Designed f
 ## Key Features
 
 * **(NEW!) Antigravity usage data:** Displays usage data for Antigravity, showing the limit, and limit reset time.
+* **OpenAI / Codex usage data:** Reuses local Codex CLI login when available to show Codex plan/rate-limit status, or falls back to OpenAI organization usage scoped to Codex models.
 * **Claude Code usage data:** Displays usage data for Claude Code, showing the daily limit, weekly limit, and limit reset time.
 * **Weather & Air Quality:** Real-time temperature, humidity, wind direction/speed, UV index, 4-hour forecast, and AQI (with visual inversion for high pollution levels) using the Open-Meteo API.
 * **Strava Integration:** Displays total and yearly activity statistics (distance and ride counts), including specific breakdowns for biking and hiking.
@@ -55,6 +56,14 @@ All widget toggles and API configurations are located at the top of the `main.py
 2. The script will pause, ask for your to copy the authorization URL and paste it on real browser.
 3. Open that URL in your browser, click "Authorize", and you will be redirected to a dead `localhost` page.
 7. Copy the whole URL containing `code=...` portion from your browser's address bar and paste it back into the terminal. The script will automatically fetch and save the required tokens to `claude_creds.json`.
+
+### OpenAI / Codex
+1. Enable `ENABLE_OPENAI = True` near the top of `main.py`.
+2. Preferred: sign in with the local `codex` CLI first. The widget will automatically reuse `~/.codex/auth.json` to fetch Codex plan/rate-limit status.
+3. Optional fallback: adjust `OPENAI_CONF['PROJECT_IDS']` and `OPENAI_CONF['MODEL_FILTERS']`, then provide an **OpenAI Admin API key** when prompted. That path saves credentials to `openai_creds.json` and reads OpenAI organization usage totals from `openai_usage.json`.
+4. Run `main.py` from a terminal for the first time.
+
+> **Note:** The Codex ChatGPT path depends on the same undocumented backend endpoints used by the Codex CLI. If those requests are blocked, the widget gracefully falls back to the cached file or the optional OpenAI Admin API key path.
 
 ### Strava
 1. Go to your Strava API Settings and create an API Application.
@@ -129,4 +138,3 @@ You can download the case stl files [here](https://makerworld.com/en/models/2322
 
 [![Video Title](https://img.youtube.com/vi/H964RpaJvu0/0.jpg)](https://youtu.be/H964RpaJvu0)
 (Youtube clickable)
-

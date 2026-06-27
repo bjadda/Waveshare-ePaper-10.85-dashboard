@@ -50,6 +50,7 @@ ENABLE_BAMBU = False
 ENABLE_ROBOROCK = False
 ENABLE_ANTIGRAVITY = False
 ENABLE_CLAUDE = False
+ENABLE_OPENAI = False
 ENABLE_SPOTIFY = False
 
 # --- API ENDPOINTS ---
@@ -86,6 +87,12 @@ LASTFM_CONF = {
 
 STRAVA_CONF = {
     'TOKEN_FILE': os.path.join(BASE_DIR, 'strava_token.json')
+}
+
+OPENAI_CONF = {
+    'LABEL': 'OPENAI / CODEX',
+    'PROJECT_IDS': [],
+    'MODEL_FILTERS': ['gpt-5-codex', 'gpt-5.3-codex', 'codex-mini-latest']
 }
 
 # --- FILES & SCOPES ---
@@ -200,6 +207,7 @@ class DataStore:
         self.gmail_unread = 0
         self.spotify = {'status': 'PAUSED', 'text': '', 'cover': None}
         self.claude = {'error': False, 'five_hour': {}, 'seven_day': {}}
+        self.openai = {'error': False, 'window_24h': {}, 'window_7d': {}, 'models': []}
         self.antigravity = {'error': False, 'models': []}
         self.roborock = {
             'status': 'OFFLINE', 'battery': 0, 'is_cleaning': False,
@@ -212,7 +220,7 @@ class DataStore:
         self.last_update = {
             'weather': 0, 'strava': 0, 'printer': 0, 'gmail': 0,
             'spotify': 0, 'crypto': 0, 'sysload': 0, 'ping': 0,
-            'claude': 0, 'antigravity': 0
+            'claude': 0, 'openai': 0, 'antigravity': 0
         }
 
 
@@ -268,6 +276,50 @@ def time_until(iso_str):
         return "N/A"
 
 
+def compact_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "0"
+
+    abs_number = abs(number)
+    if abs_number >= 1_000_000_000:
+        scaled = f"{number / 1_000_000_000:.1f}".rstrip('0').rstrip('.')
+        return f"{scaled}B"
+    if abs_number >= 1_000_000:
+        scaled = f"{number / 1_000_000:.1f}".rstrip('0').rstrip('.')
+        return f"{scaled}M"
+    if abs_number >= 1_000:
+        scaled = f"{number / 1_000:.1f}".rstrip('0').rstrip('.')
+        return f"{scaled}K"
+    return str(int(number))
+
+
+def format_model_label(model_name):
+    if not model_name:
+        return "Unknown"
+    known_labels = {
+        'gpt-5-codex': 'GPT-5 Codex',
+        'gpt-5.3-codex': 'GPT-5.3 Codex',
+        'codex-mini-latest': 'Codex Mini'
+    }
+    return known_labels.get(model_name, model_name.replace('-', ' ')[:20])
+
+
+def format_window_label(seconds):
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return "Window"
+    if seconds >= 3600:
+        hours = seconds // 3600
+        return f"{hours}h Window"
+    if seconds >= 60:
+        minutes = seconds // 60
+        return f"{minutes}m Window"
+    return f"{seconds}s Window"
+
+
 # --- AUTH & FETCH THREADS ---
 
 def auth_claude():
@@ -296,6 +348,24 @@ def auth_antigravity():
     except ImportError:
         print("antigravity.py not found. Antigravity widget disabled.")
         ENABLE_ANTIGRAVITY = False
+
+
+def auth_openai():
+    global ENABLE_OPENAI
+    if not ENABLE_OPENAI: return
+    try:
+        import openai_codex
+        success = openai_codex.interactive_auth({
+            'label': OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'),
+            'project_ids': OPENAI_CONF.get('PROJECT_IDS', []),
+            'model_filters': OPENAI_CONF.get('MODEL_FILTERS', [])
+        })
+        if not success:
+            ENABLE_OPENAI = False
+            print("OpenAI / Codex widget is disabled.")
+    except ImportError:
+        print("openai_codex.py not found. OpenAI / Codex widget disabled.")
+        ENABLE_OPENAI = False
 
 
 def auth_strava():
@@ -686,6 +756,28 @@ def update_data_thread():
                     data_store.claude['error'] = True
             data_store.last_update['claude'] = now
 
+        if ENABLE_OPENAI and now - data_store.last_update['openai'] > 600:
+            try:
+                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'openai_codex.py')], capture_output=True, timeout=30)
+                openai_usage_path = os.path.join(BASE_DIR, 'openai_usage.json')
+                if os.path.exists(openai_usage_path):
+                    with open(openai_usage_path, 'r', encoding='utf-8') as f:
+                        openai_data = json.load(f)
+                    with data_store.lock:
+                        data_store.openai = openai_data
+                        if "error" in openai_data and "window_24h" not in openai_data:
+                            data_store.openai['error'] = True
+                        else:
+                            data_store.openai['error'] = False
+                else:
+                    with data_store.lock:
+                        data_store.openai['error'] = True
+            except Exception as e:
+                logging.error(f"OpenAI / Codex update error: {e}")
+                with data_store.lock:
+                    data_store.openai['error'] = True
+            data_store.last_update['openai'] = now
+
         if ENABLE_ANTIGRAVITY and now - data_store.last_update['antigravity'] > 60:
             try:
                 subprocess.run([sys.executable, os.path.join(BASE_DIR, 'antigravity.py')], capture_output=True, timeout=30)
@@ -808,6 +900,7 @@ def render_screen(epd, fonts):
         gmail_unread = data_store.gmail_unread
         spotify = data_store.spotify.copy()
         claude = data_store.claude.copy()
+        openai = data_store.openai.copy()
         antigravity = data_store.antigravity.copy()
         sysload = data_store.sysload.copy()
         crypto = data_store.crypto.copy()
@@ -1059,12 +1152,54 @@ def render_screen(epd, fonts):
 
     draw.line((col3_x, 220, epd.width - 20, 220), fill=0, width=2)
 
-    # 2. Claude AI OR Spotify OR Time Progress
+    # 2. Claude / OpenAI OR Spotify OR Time Progress
     sp_y = 240
     # Clear background for widget
     draw.rectangle((col3_x, sp_y, col3_x + 420, sp_y + 130), fill=255)
 
-    if ENABLE_CLAUDE:
+    if ENABLE_CLAUDE and ENABLE_OPENAI:
+        draw.text((col3_x, sp_y), "AI PROVIDER USAGE", font=fonts['28'], fill=0)
+
+        if claude.get('error'):
+            draw.text((col3_x, sp_y + 35), "Claude: Usage unavailable", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 58), "Check claude_creds.json / usage.json", font=fonts['20'], fill=0)
+        else:
+            pct_5h = claude.get('five_hour', {}).get('utilization', 0)
+            pct_7d = claude.get('seven_day', {}).get('utilization', 0)
+            rem_5h = time_until(claude.get('five_hour', {}).get('resets_at'))
+            rem_7d = time_until(claude.get('seven_day', {}).get('resets_at'))
+            draw.text((col3_x, sp_y + 35), f"Claude 5h {pct_5h}% | 7d {pct_7d}%", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 58), f"Resets {rem_5h} / {rem_7d}", font=fonts['20'], fill=0)
+
+        openai_label = openai.get('label', OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'))
+        if openai.get('error'):
+            draw.text((col3_x, sp_y + 86), f"{openai_label}: Usage unavailable", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 109), "Check openai_creds.json / openai_usage.json", font=fonts['20'], fill=0)
+        else:
+            if openai.get('mode') == 'codex_chatgpt':
+                primary = openai.get('primary_window', {})
+                secondary = openai.get('secondary_window', {})
+                draw.text((col3_x, sp_y + 86),
+                          f"Codex {primary.get('used_percent', 0)}% | {secondary.get('used_percent', 0)}%",
+                          font=fonts['20'], fill=0)
+                plan = str(openai.get('plan_type', 'unknown')).upper()
+                draw.text((col3_x, sp_y + 109), f"Plan {plan} | Credits {openai.get('credits', {}).get('available_count', 0)}",
+                          font=fonts['20'], fill=0)
+            elif openai.get('mode') == 'codex_api_key':
+                draw.text((col3_x, sp_y + 86), "Codex API key mode active", font=fonts['20'], fill=0)
+                draw.text((col3_x, sp_y + 109), "Add admin key or ChatGPT sign-in for usage", font=fonts['20'], fill=0)
+            else:
+                openai_day = openai.get('window_24h', {})
+                top_model = next(iter(openai.get('models', [])), {})
+                total_tokens = openai_day.get('input_tokens', 0) + openai_day.get('output_tokens', 0)
+                draw.text((col3_x, sp_y + 86),
+                          f"{openai_label} 24h {openai_day.get('requests', 0)} req | {compact_number(total_tokens)} tok",
+                          font=fonts['20'], fill=0)
+                top_label = format_model_label(top_model.get('model'))
+                draw.text((col3_x, sp_y + 109), f"Top model: {top_label} {top_model.get('requests_7d', 0)} req / 7d",
+                          font=fonts['20'], fill=0)
+
+    elif ENABLE_CLAUDE:
         draw.text((col3_x, sp_y), "CLAUDE AI USAGE", font=fonts['28'], fill=0)
 
         if claude.get('error'):
@@ -1090,6 +1225,63 @@ def render_screen(epd, fonts):
             draw.rectangle((bx, sp_y + 115, bx + bw, sp_y + 115 + bh), outline=0, width=2)
             fill_w = int((bw - 4) * min(pct_7d / 100.0, 1.0))
             if fill_w > 0: draw.rectangle((bx + 2, sp_y + 117, bx + 2 + fill_w, sp_y + 115 + bh - 2), fill=0)
+
+    elif ENABLE_OPENAI:
+        openai_label = openai.get('label', OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'))
+        draw.text((col3_x, sp_y), openai_label, font=fonts['28'], fill=0)
+
+        if openai.get('error'):
+            draw.text((col3_x, sp_y + 50), "OpenAI / Codex Usage Error", font=fonts['24'], fill=0)
+        elif openai.get('mode') == 'codex_chatgpt':
+            primary = openai.get('primary_window', {})
+            secondary = openai.get('secondary_window', {})
+            credits = openai.get('credits', {})
+
+            draw.text((col3_x, sp_y + 35), f"Plan: {str(openai.get('plan_type', 'unknown')).upper()}",
+                      font=fonts['20'], fill=0)
+
+            bx, bw, bh = col3_x, 400, 15
+
+            primary_label = format_window_label(primary.get('limit_window_seconds'))
+            primary_pct = primary.get('used_percent', 0)
+            draw.text((col3_x, sp_y + 58), f"{primary_label}: {primary_pct}% (Resets in {time_until(primary.get('reset_at'))})",
+                      font=fonts['20'], fill=0)
+            draw.rectangle((bx, sp_y + 82, bx + bw, sp_y + 82 + bh), outline=0, width=2)
+            fill_w = int((bw - 4) * min(primary_pct / 100.0, 1.0))
+            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 84, bx + 2 + fill_w, sp_y + 82 + bh - 2), fill=0)
+
+            secondary_label = format_window_label(secondary.get('limit_window_seconds'))
+            secondary_pct = secondary.get('used_percent', 0)
+            draw.text((col3_x, sp_y + 100),
+                      f"{secondary_label}: {secondary_pct}% (Resets in {time_until(secondary.get('reset_at'))})",
+                      font=fonts['20'], fill=0)
+            draw.rectangle((bx, sp_y + 124, bx + bw, sp_y + 124 + bh), outline=0, width=2)
+            fill_w = int((bw - 4) * min(secondary_pct / 100.0, 1.0))
+            if fill_w > 0: draw.rectangle((bx + 2, sp_y + 126, bx + 2 + fill_w, sp_y + 124 + bh - 2), fill=0)
+        elif openai.get('mode') == 'codex_api_key':
+            draw.text((col3_x, sp_y + 35), "Codex is using API key mode.", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 60), "Plan/rate-limit data is only", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 85), "available with ChatGPT sign-in", font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 108), "or an OpenAI Admin API key.", font=fonts['20'], fill=0)
+        else:
+            usage_24h = openai.get('window_24h', {})
+            usage_7d = openai.get('window_7d', {})
+            models = openai.get('models', [])
+
+            total_24h_tokens = usage_24h.get('input_tokens', 0) + usage_24h.get('output_tokens', 0)
+            total_7d_tokens = usage_7d.get('input_tokens', 0) + usage_7d.get('output_tokens', 0)
+
+            draw.text((col3_x, sp_y + 35),
+                      f"24h: {usage_24h.get('requests', 0)} req | {compact_number(total_24h_tokens)} tok",
+                      font=fonts['20'], fill=0)
+            draw.text((col3_x, sp_y + 60),
+                      f"7d: {usage_7d.get('requests', 0)} req | {compact_number(total_7d_tokens)} tok",
+                      font=fonts['20'], fill=0)
+
+            for idx, m_data in enumerate(models[:2]):
+                label = format_model_label(m_data.get('model'))
+                y_off = sp_y + 85 + (idx * 23)
+                draw.text((col3_x, y_off), f"{label}: {m_data.get('requests_7d', 0)} req / 7d", font=fonts['20'], fill=0)
 
     elif ENABLE_SPOTIFY:
         if spotify['cover']:
@@ -1148,6 +1340,7 @@ def render_screen(epd, fonts):
 def main():
     auth_strava()
     auth_claude()
+    auth_openai()
     auth_antigravity()
     roborock_user_data = auth_roborock(ROBOROCK_CONF['EMAIL'])
 
