@@ -701,6 +701,11 @@ class EPD:
         Fixes:
         1. Simultaneous refresh (no delay between screens).
         2. Correct register usage (0x10 for old data) preventing right screen crash.
+
+        `Image` may be either:
+        - a packed 1bpp buffer for this exact update window, or
+        - a packed full-screen 1bpp buffer from getbuffer(); the requested
+          window is cropped out here.
         """
         # ---- clamp to screen ----
         if Xstart < 0: Xstart = 0
@@ -726,10 +731,23 @@ class EPD:
         win_w_bytes = win_w_px // 8
 
         expected = win_w_bytes * win_h
+        full_screen_bytes = (self.width // 8) * self.height
         if len(Image) != expected:
-            # Simple safeguard logic: if buffer is full screen, try to crop logic or raise error.
-            # Assuming input Image is exactly size of window requested.
-            raise ValueError(f"Buffer mismatch: expected {expected}, got {len(Image)}")
+            if len(Image) == full_screen_bytes:
+                full_w_bytes = self.width // 8
+                x_byte = Xs // 8
+                cropped = bytearray(expected)
+                for row in range(win_h):
+                    src_start = (Ys + row) * full_w_bytes + x_byte
+                    src_end = src_start + win_w_bytes
+                    dst_start = row * win_w_bytes
+                    cropped[dst_start:dst_start + win_w_bytes] = Image[src_start:src_end]
+                Image = cropped
+            else:
+                raise ValueError(
+                    f"Buffer mismatch: expected {expected} window bytes or "
+                    f"{full_screen_bytes} full-screen bytes, got {len(Image)}"
+                )
 
         # --- Helper: Load data into controller RAM (0x13 New Data) ---
         # Does NOT trigger refresh yet.
