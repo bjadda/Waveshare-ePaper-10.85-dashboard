@@ -21,7 +21,30 @@ A fully functional E-ink dashboard running on a Raspberry Pi Zero 2W. Designed f
 
 ---
 
-## Prerequisites & Installation
+## Quick Install (Recommended)
+
+Run this single command on your Raspberry Pi:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/bjadda/Waveshare-ePaper-10.85-dashboard/main/install.sh | bash
+```
+
+The installer will:
+- Enable SPI automatically
+- Install all system and Python dependencies
+- Walk you through configuring each widget
+- Set up the dashboard to start automatically on boot
+
+### Managing the service
+
+```bash
+sudo systemctl status epaper-dashboard   # Check status
+sudo systemctl restart epaper-dashboard  # Restart
+journalctl -u epaper-dashboard -f        # Live logs
+```
+
+<details>
+<summary>Manual Installation</summary>
 
 ### Hardware
 * [Raspberry Pi Zero 2W](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/)
@@ -44,6 +67,8 @@ Install the required standard Python packages:
 
 ### 3. Display Library
 The **patched** version of the epd10in85 library with fixed partial refresh issue already included in this package.
+
+</details>
 
 ---
 
