@@ -19,9 +19,7 @@ import urllib.parse
 from collections import deque
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
-import dashboard_config
-import dashboard_defaults
-import dashboard_widgets
+from dashboard import dashboard_config, dashboard_defaults, dashboard_widgets
 from logging.handlers import RotatingFileHandler
 
 # --- GMAIL IMPORTS ---
@@ -384,13 +382,13 @@ def auth_claude():
     global ENABLE_CLAUDE
     if not ENABLE_CLAUDE: return
     try:
-        import claude
+        from dashboard import claude
         success = claude.interactive_auth()
         if not success:
             ENABLE_CLAUDE = False
             print("Claude widget is disabled.")
     except ImportError:
-        print("claude.py not found. Claude widget disabled.")
+        print("dashboard/claude.py not found. Claude widget disabled.")
         ENABLE_CLAUDE = False
 
 
@@ -398,13 +396,13 @@ def auth_antigravity():
     global ENABLE_ANTIGRAVITY
     if not ENABLE_ANTIGRAVITY: return
     try:
-        import antigravity
+        from dashboard import antigravity
         success = antigravity.interactive_auth()
         if not success:
             ENABLE_ANTIGRAVITY = False
             print("Antigravity widget is disabled.")
     except ImportError:
-        print("antigravity.py not found. Antigravity widget disabled.")
+        print("dashboard/antigravity.py not found. Antigravity widget disabled.")
         ENABLE_ANTIGRAVITY = False
 
 
@@ -412,7 +410,7 @@ def auth_openai():
     global ENABLE_OPENAI
     if not ENABLE_OPENAI: return
     try:
-        import openai_codex
+        from dashboard import openai_codex
         success = openai_codex.interactive_auth({
             'label': OPENAI_CONF.get('LABEL', 'OPENAI / CODEX'),
             'project_ids': OPENAI_CONF.get('PROJECT_IDS', []),
@@ -422,7 +420,7 @@ def auth_openai():
             ENABLE_OPENAI = False
             print("OpenAI / Codex widget is disabled.")
     except ImportError:
-        print("openai_codex.py not found. OpenAI / Codex widget disabled.")
+        print("dashboard/openai_codex.py not found. OpenAI / Codex widget disabled.")
         ENABLE_OPENAI = False
 
 
@@ -794,7 +792,7 @@ def update_data_thread():
         # Claude Data Fetching (Run external script every 10 min)
         if ENABLE_CLAUDE and now - data_store.last_update['claude'] > 600:
             try:
-                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'claude.py')], capture_output=True, timeout=30)
+                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'claude.py')], capture_output=True, timeout=30)
                 usage_path = os.path.join(BASE_DIR, 'usage.json')
                 if os.path.exists(usage_path):
                     with open(usage_path, 'r') as f:
@@ -816,7 +814,7 @@ def update_data_thread():
 
         if ENABLE_OPENAI and now - data_store.last_update['openai'] > 600:
             try:
-                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'openai_codex.py')], capture_output=True, timeout=30)
+                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'openai_codex.py')], capture_output=True, timeout=30)
                 openai_usage_path = os.path.join(BASE_DIR, 'openai_usage.json')
                 if os.path.exists(openai_usage_path):
                     with open(openai_usage_path, 'r', encoding='utf-8') as f:
@@ -838,7 +836,7 @@ def update_data_thread():
 
         if ENABLE_ANTIGRAVITY and now - data_store.last_update['antigravity'] > 60:
             try:
-                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'antigravity.py')], capture_output=True, timeout=30)
+                subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'antigravity.py')], capture_output=True, timeout=30)
                 limits_path = os.path.join(BASE_DIR, 'limits.json')
                 if os.path.exists(limits_path):
                     with open(limits_path, 'r', encoding='utf-8') as f:

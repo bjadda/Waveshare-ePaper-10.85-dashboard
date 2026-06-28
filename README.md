@@ -119,25 +119,29 @@ The **patched** version of the epd10in85 library with fixed partial refresh issu
 | Path | Purpose |
 | --- | --- |
 | `main.py` | Runtime loop, data fetching, e-paper rendering orchestration. |
-| `dashboard_widgets.py` | Widget drawing functions and screen-region rendering. |
-| `dashboard_config.py` | JSON config loading, validation, defaults merge, and atomic save. |
-| `dashboard_defaults.py` | Shared defaults used by the dashboard, installer, and configurator. |
-| `config_server.py` | Local accessible web configurator with no build step. |
+| `dashboard/dashboard_widgets.py` | Widget drawing functions and screen-region rendering. |
+| `dashboard/dashboard_config.py` | JSON config loading, validation, defaults merge, and atomic save. |
+| `dashboard/dashboard_defaults.py` | Shared defaults used by the dashboard, installer, and configurator. |
+| `config_server.py` | Local accessible web configurator entry point with no build step. |
 | `install.sh` | Raspberry Pi bootstrap, config collection, dependencies, and systemd setup. |
+| `dashboard/` | Support package for widgets, config helpers, and usage-provider scripts. |
+| `config/dashboard_config.example.json` | Safe sample runtime config. |
+| `systemd/epaper-dashboard.service` | Service template installed by `install.sh`. |
 | `lib/waveshare_epd/` | Bundled Waveshare display driver, including the local 10.85 partial-refresh patch. |
 
 ## Credits and Changes
 
-Project credit is tracked in [`CREDITS.md`](CREDITS.md), which names [bjadda](https://github.com/bjadda) as the original repository owner. This branch adds the modular widget system, runtime JSON config, web configurator, partial-refresh patch, and the visual dashboard ideas shown above.
+Project credit is tracked in [`CREDITS.md`](CREDITS.md), which names [czuryk](https://github.com/czuryk) and [`czuryk/Waveshare-ePaper-10.85-dashboard`](https://github.com/czuryk/Waveshare-ePaper-10.85-dashboard) as the original repo. This branch adds the modular widget system, runtime JSON config, web configurator, partial-refresh patch, and the visual dashboard ideas shown above.
 
 ---
+
 ## Configuration & Widget Setup
 
-Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, copy `dashboard_config.example.json` as a manual starting point, or edit the JSON directly. Source defaults remain in `dashboard_defaults.py`, and `main.py` loads the merged config at startup.
+Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, copy `config/dashboard_config.example.json` as a manual starting point, or edit the JSON directly. Source defaults remain in `dashboard/dashboard_defaults.py`, and `main.py` loads the merged config at startup.
 
 ### Dynamic Widget Slots
 
-The dashboard has named widget slots in `dashboard_config.json`, while widget drawing lives in `dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: false`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: true` and adjust `seconds` to cycle through all available widgets in that screen region.
+The dashboard has named widget slots in `dashboard_config.json`, while widget drawing lives in `dashboard/dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: false`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: true` and adjust `seconds` to cycle through all available widgets in that screen region.
 
 Example:
 

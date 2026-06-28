@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import requests
 
 # --- Configuration ---
-SCRIPT_DIR = Path(__file__).parent.resolve()
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_FILE = SCRIPT_DIR / "claude_creds.json"
 USAGE_FILE = SCRIPT_DIR / "usage.json"
 LOG_FILE = SCRIPT_DIR / "claude_monitor.log"

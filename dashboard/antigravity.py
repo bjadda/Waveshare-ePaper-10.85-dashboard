@@ -10,7 +10,7 @@ import datetime
 from pathlib import Path
 
 # Setup logging (file and console)
-SCRIPT_DIR = Path(__file__).parent.resolve()
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 LOG_FILE = SCRIPT_DIR / "limits.log"
 TOKEN_FILE = SCRIPT_DIR / "antigravity_creds.json"
 LIMITS_FILE = SCRIPT_DIR / "limits.json"

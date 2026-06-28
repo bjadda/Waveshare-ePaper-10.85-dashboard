@@ -13,7 +13,7 @@ from pathlib import Path
 import requests
 
 # --- Configuration ---
-SCRIPT_DIR = Path(__file__).parent.resolve()
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 CREDENTIALS_FILE = SCRIPT_DIR / "openai_creds.json"
 USAGE_FILE = SCRIPT_DIR / "openai_usage.json"
 LOG_FILE = SCRIPT_DIR / "openai_monitor.log"

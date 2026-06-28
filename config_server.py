@@ -7,8 +7,7 @@ import subprocess
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import dashboard_config
-import dashboard_defaults
+from dashboard import dashboard_config, dashboard_defaults
 
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULTS = dashboard_defaults.dashboard_config_defaults()
