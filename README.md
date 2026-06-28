@@ -69,7 +69,7 @@ Restart after saving:
 sudo systemctl restart epaper-dashboard
 ```
 
-Manual config starts from `config/dashboard_config.example.json`. Detailed widget setup lives in [docs/WIDGETS.md](docs/WIDGETS.md).
+Manual config starts from `config/dashboard_config.example.json`. Detailed widget setup lives in [docs/WIDGETS.md](docs/WIDGETS.md), and visual asset guidance lives in [docs/ASSETS.md](docs/ASSETS.md).
 
 ## Run And Debug
 
@@ -109,9 +109,10 @@ The editable visual source is [docs/visualization-ideas.svg](docs/visualization-
 | `config_server.py` | Local accessible web configurator. |
 | `dashboard/` | Widget rendering, config helpers, and usage-provider scripts. |
 | `config/` | Safe sample runtime config. |
-| `docs/` | Contributor and setup references that do not need to crowd the README. |
+| `docs/` | Widget setup, asset gallery, and references that do not need to crowd the README. |
 | `lib/waveshare_epd/` | Bundled Waveshare driver with the local 10.85 partial-refresh patch. |
 | `systemd/` | Service template installed by `install.sh`. |
+| `tools/` | Small maintainer scripts, including the generated icon/font gallery. |
 
 ## Participate
 

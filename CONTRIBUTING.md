@@ -9,6 +9,7 @@ Thanks for helping make this dashboard better. Useful contributions are small, s
 - Test the Waveshare 10.85-inch partial refresh behavior and report exact rectangles.
 - Improve logs or error messages when an integration fails.
 - Add examples for real dashboard layouts.
+- Add compatible icons or font-gallery improvements; see `docs/ASSETS.md`.
 - Clean up docs when setup steps are confusing.
 
 ## Before Opening An Issue
@@ -74,7 +75,7 @@ For display-driver or partial-refresh changes, include:
 - Prefer clear names over clever abstractions.
 - Keep root files minimal. Put detailed references in `docs/`.
 - Update `config/dashboard_config.example.json` when config shape changes.
-- Update `README.md` only for the short path; put detailed setup in `docs/WIDGETS.md`.
+- Update `README.md` only for the short path; put detailed setup in `docs/WIDGETS.md` and visual asset guidance in `docs/ASSETS.md`.
 - Preserve local-only secret files in `.gitignore`.
 
 ## Logging First
