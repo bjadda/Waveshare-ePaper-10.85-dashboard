@@ -19,6 +19,8 @@ import urllib.parse
 from collections import deque
 from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
+import dashboard_config
+import dashboard_defaults
 import dashboard_widgets
 from logging.handlers import RotatingFileHandler
 
@@ -44,41 +46,25 @@ LOG_FILE = os.path.join(BASE_DIR, 'dashboard.log')
 # ######################
 # --- WIDGET TOGGLES ---
 # ######################
-ENABLE_STRAVA = False
-ENABLE_BAMBU = False
-ENABLE_ROBOROCK = False
-ENABLE_ANTIGRAVITY = False
-ENABLE_CLAUDE = False
-ENABLE_OPENAI = False
-ENABLE_SPOTIFY = False
+ENABLE_STRAVA = dashboard_defaults.DEFAULT_WIDGETS['strava']
+ENABLE_BAMBU = dashboard_defaults.DEFAULT_WIDGETS['bambu']
+ENABLE_ROBOROCK = dashboard_defaults.DEFAULT_WIDGETS['roborock']
+ENABLE_ANTIGRAVITY = dashboard_defaults.DEFAULT_WIDGETS['antigravity']
+ENABLE_CLAUDE = dashboard_defaults.DEFAULT_WIDGETS['claude']
+ENABLE_OPENAI = dashboard_defaults.DEFAULT_WIDGETS['openai']
+ENABLE_SPOTIFY = dashboard_defaults.DEFAULT_WIDGETS['spotify']
 
 # --- DYNAMIC WIDGET SLOTS ---
 # Each slot keeps today's first-available fallback behavior by default.
 # Set rotate=True per slot to cycle through every currently available widget.
 WIDGET_SLOTS = {
-    'left_top': {
-        'widgets': ('strava', 'sysload'),
-        'rotate': False,
-        'seconds': 300
-    },
-    'left_middle': {
-        'widgets': ('bambu', 'crypto'),
-        'rotate': False,
-        'seconds': 300
-    },
-    'left_bottom': {
-        'widgets': ('roborock', 'antigravity', 'ping'),
-        'rotate': False,
-        'seconds': 300
-    },
-    'right_middle': {
-        'widgets': ('ai_usage', 'spotify', 'time_progress'),
-        'rotate': False,
-        'seconds': 300
+    slot_name: {
+        'widgets': tuple(slot['widgets']),
+        'rotate': slot['rotate'],
+        'seconds': slot['seconds']
     }
+    for slot_name, slot in dashboard_defaults.DEFAULT_WIDGET_SLOTS.items()
 }
-
-
 def widget_slot_can_show(widget_id):
     for slot in WIDGET_SLOTS.values():
         widgets = slot.get('widgets', ())
@@ -99,33 +85,73 @@ API_ENDPOINTS = {
 
 # --- CONFIGURATION ---
 # Change to your GEO location
-LOCATION_LAT = 44.8240855
-LOCATION_LON = 20.4934273
+LOCATION_LAT = dashboard_defaults.DEFAULT_LOCATION_LAT
+LOCATION_LON = dashboard_defaults.DEFAULT_LOCATION_LON
 
-PRINTER_CONF = {
-    'IP': '192.168....',
-    'SERIAL': '',
-    'ACCESS_CODE': ''
-}
-
-ROBOROCK_CONF = {
-    'EMAIL': 'email...'
-}
-
-LASTFM_CONF = {
-    'API_KEY': '',
-    'USERNAME': ''
-}
-
+PRINTER_CONF = dict(dashboard_defaults.DEFAULT_PRINTER_CONF)
+ROBOROCK_CONF = dict(dashboard_defaults.DEFAULT_ROBOROCK_CONF)
+LASTFM_CONF = dict(dashboard_defaults.DEFAULT_LASTFM_CONF)
 STRAVA_CONF = {
     'TOKEN_FILE': os.path.join(BASE_DIR, 'strava_token.json')
 }
 
 OPENAI_CONF = {
-    'LABEL': 'OPENAI / CODEX',
-    'PROJECT_IDS': [],
-    'MODEL_FILTERS': ['gpt-5-codex', 'gpt-5.3-codex', 'codex-mini-latest']
+    'LABEL': dashboard_defaults.DEFAULT_OPENAI_CONF['LABEL'],
+    'PROJECT_IDS': list(dashboard_defaults.DEFAULT_OPENAI_CONF['PROJECT_IDS']),
+    'MODEL_FILTERS': list(dashboard_defaults.DEFAULT_OPENAI_CONF['MODEL_FILTERS'])
 }
+
+
+def apply_dashboard_config():
+    global LOCATION_LAT, LOCATION_LON
+    global ENABLE_STRAVA, ENABLE_BAMBU, ENABLE_ROBOROCK, ENABLE_ANTIGRAVITY
+    global ENABLE_CLAUDE, ENABLE_OPENAI, ENABLE_SPOTIFY
+    global WIDGET_SLOTS
+
+    config = dashboard_config.load_config(BASE_DIR, dashboard_defaults.dashboard_config_defaults())
+
+    LOCATION_LAT = config['location']['lat']
+    LOCATION_LON = config['location']['lon']
+
+    ENABLE_STRAVA = config['widgets']['strava']
+    ENABLE_BAMBU = config['widgets']['bambu']
+    ENABLE_ROBOROCK = config['widgets']['roborock']
+    ENABLE_ANTIGRAVITY = config['widgets']['antigravity']
+    ENABLE_CLAUDE = config['widgets']['claude']
+    ENABLE_OPENAI = config['widgets']['openai']
+    ENABLE_SPOTIFY = config['widgets']['spotify']
+
+    PRINTER_CONF.update({
+        'IP': config['integrations']['bambu']['ip'],
+        'SERIAL': config['integrations']['bambu']['serial'],
+        'ACCESS_CODE': config['integrations']['bambu']['access_code']
+    })
+    ROBOROCK_CONF.update({
+        'EMAIL': config['integrations']['roborock']['email']
+    })
+    LASTFM_CONF.update({
+        'API_KEY': config['integrations']['lastfm']['api_key'],
+        'USERNAME': config['integrations']['lastfm']['username']
+    })
+    OPENAI_CONF.update({
+        'LABEL': config['integrations']['openai']['label'],
+        'PROJECT_IDS': config['integrations']['openai']['project_ids'],
+        'MODEL_FILTERS': config['integrations']['openai']['model_filters']
+    })
+
+    WIDGET_SLOTS = {
+        slot_name: {
+            'widgets': tuple(slot.get('widgets', ())),
+            'rotate': dashboard_config.bool_value(slot.get('rotate'), False),
+            'seconds': dashboard_config.int_value(
+                slot.get('seconds'), 300, minimum=30, maximum=86400
+            )
+        }
+        for slot_name, slot in config['slots'].items()
+    }
+
+
+apply_dashboard_config()
 
 # --- FILES & SCOPES ---
 GMAIL_TOKEN_PATH = os.path.join(BASE_DIR, 'token.json')

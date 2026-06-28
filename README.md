@@ -15,6 +15,7 @@ A fully functional E-ink dashboard running on a Raspberry Pi Zero 2W. Designed f
 * **Gmail:** Tracks the number of unread emails in your primary inbox.
 * **System Fallbacks:** Automatically switches to displaying System Load (CPU/RAM usage) or Cryptocurrency prices (BTC/ETH) if certain hardware integrations are disabled or offline for demonstration of dashboard capabilities. The fallback wedgets are not required tokens and ready to go.
 * **Optimized Rendering:** Uses partial screen refreshes to prevent flickering, with scheduled full refreshes to clear e-ink ghosting.
+* **Web Configurator:** Provides a local, accessible browser UI for widget toggles, slot rotation, credentials, and location settings.
 
 <img width="2400" height="1792" alt="dashboard_primary" src="https://github.com/user-attachments/assets/20be2eae-4a06-48e2-9ad4-efcba00dcb7f" />
 <img width="2400" height="1792" alt="dashboard_fallback" src="https://github.com/user-attachments/assets/158d65ee-9a12-4f09-a9d3-ea66ca3055bc" />
@@ -33,6 +34,7 @@ The installer will:
 - Enable SPI automatically
 - Install all system and Python dependencies
 - Walk you through configuring each widget
+- Write `dashboard_config.json` for runtime configuration
 - Set up the dashboard to start automatically on boot
 
 ### Managing the service
@@ -42,6 +44,23 @@ sudo systemctl status epaper-dashboard   # Check status
 sudo systemctl restart epaper-dashboard  # Restart
 journalctl -u epaper-dashboard -f        # Live logs
 ```
+
+### Web Configurator
+
+Run the local configurator from the dashboard directory:
+
+```bash
+cd ~/dashboard
+python3 config_server.py --host 0.0.0.0 --port 8080
+```
+
+Then open `http://<pi-ip>:8080` from a browser on the same trusted network. The UI writes `dashboard_config.json`; restart the service after saving if the dashboard is already running:
+
+```bash
+sudo systemctl restart epaper-dashboard
+```
+
+Use `--allow-restart` if you want the configurator's restart button to call systemd for you.
 
 <details>
 <summary>Manual Installation</summary>
@@ -74,19 +93,19 @@ The **patched** version of the epd10in85 library with fixed partial refresh issu
 
 ## Configuration & Widget Setup
 
-All widget toggles and API configurations are located at the top of the `main.py` script. You can enable or disable specific widgets using the `ENABLE_*` boolean variables.
+Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, or edit the JSON file directly. Source defaults remain in `dashboard_defaults.py`, and `main.py` loads the merged config at startup.
 
 ### Dynamic Widget Slots
 
-The dashboard now has named widget slots in `WIDGET_SLOTS` near the top of `main.py`, while widget drawing lives in `dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: False`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: True` and adjust `seconds` to cycle through all available widgets in that screen region.
+The dashboard has named widget slots in `dashboard_config.json`, while widget drawing lives in `dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: false`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: true` and adjust `seconds` to cycle through all available widgets in that screen region.
 
 Example:
 
-```python
-'right_middle': {
-    'widgets': ('ai_usage', 'spotify', 'time_progress'),
-    'rotate': True,
-    'seconds': 300
+```json
+"right_middle": {
+  "widgets": ["ai_usage", "spotify", "time_progress"],
+  "rotate": true,
+  "seconds": 300
 }
 ```
 
@@ -99,9 +118,9 @@ This rotates the right-middle area every five minutes while keeping the rest of 
 7. Copy the whole URL containing `code=...` portion from your browser's address bar and paste it back into the terminal. The script will automatically fetch and save the required tokens to `claude_creds.json`.
 
 ### OpenAI / Codex
-1. Enable `ENABLE_OPENAI = True` near the top of `main.py`.
+1. Enable the OpenAI / Codex widget in the web configurator or in `dashboard_config.json`.
 2. Preferred: sign in with the local `codex` CLI first. The widget will automatically reuse `~/.codex/auth.json` to fetch Codex plan/rate-limit status.
-3. Optional fallback: adjust `OPENAI_CONF['PROJECT_IDS']` and `OPENAI_CONF['MODEL_FILTERS']`, then provide an **OpenAI Admin API key** when prompted. That path saves credentials to `openai_creds.json` and reads OpenAI organization usage totals from `openai_usage.json`.
+3. Optional fallback: adjust the OpenAI project IDs and model filters in the web configurator or `dashboard_config.json`, then provide an **OpenAI Admin API key** when prompted. That path saves credentials to `openai_creds.json` and reads OpenAI organization usage totals from `openai_usage.json`.
 4. Run `main.py` from a terminal for the first time.
 
 > **Note:** The Codex ChatGPT path depends on the same undocumented backend endpoints used by the Codex CLI. If those requests are blocked, the widget gracefully falls back to the cached file or the optional OpenAI Admin API key path.
@@ -115,7 +134,7 @@ This rotates the right-middle area every five minutes while keeping the rest of 
 6. Copy the `code=...` portion from your browser's address bar and paste it back into the terminal. The script will automatically fetch and save the required `activity:read_all` tokens to `strava_token.json`.
 
 ### Roborock
-1. Open `main.py` and input your Roborock account email address in the `ROBOROCK_CONF` dictionary.
+1. Add your Roborock account email in the web configurator or in `dashboard_config.json`.
 2. Run the script from the terminal.
 3. The script will request an OTP (One-Time Password) which will be sent to your email.
 4. Enter the 6-digit code in the terminal. The script will securely save your session data locally.
@@ -124,13 +143,13 @@ This rotates the right-middle area every five minutes while keeping the rest of 
 **You DON'T need to enable "LAN Mode" on your Bambu Lab printer to access local data.**
 1. On your printer's screen, go to **Settings -> Network**.
 2. Note your printer's **IP Address**, **Serial Number**, and **Access Code**. (Force on your router to map exact IP address)
-3. Update the `PRINTER_CONF` dictionary in the script with these local credentials.
+3. Add these local credentials in the web configurator or in `dashboard_config.json`.
 
 ### Spotify (via Last.fm)
 Since the official Spotify API requires running a local web server for complex token renewals, this dashboard uses Last.fm to fetch the current playing track reliably form Spotify. It's is transparent and working method.
 1. Connect your Spotify account to Last.fm.
 2. Create a Last.fm API account to generate an **API Key**.
-3. Update `LASTFM_CONF` in the script with your API Key and Last.fm Username.
+3. Add your API key and username in the web configurator or in `dashboard_config.json`.
    
 **After configuration, you no longer need to use the Last.fm service, and a paid Last.fm account is not required. You can continue to use only the Spotify service.**
 

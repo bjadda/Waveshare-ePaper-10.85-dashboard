@@ -1,0 +1,21 @@
+# Runtime configuration and credentials
+config.env
+dashboard_config.json
+dashboard.log
+*_creds.json
+*_token.json
+openai_usage.json
+usage.json
+token.json
+strava_token.json
+roborock_session.pkl
+roborock_stats.json
+
+# Python/runtime caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local editor/system files
+.DS_Store
+Thumbs.db

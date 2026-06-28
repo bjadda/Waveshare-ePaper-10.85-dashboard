@@ -44,10 +44,6 @@ prompt_yes_no() {
   done
 }
 
-escape_py() {
-  printf "%s" "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g"
-}
-
 validate_float() {
   local value="$1"
   [[ "$value" =~ ^-?[0-9]+([.][0-9]+)?$ ]]
@@ -56,6 +52,7 @@ validate_float() {
 REPO_URL="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard.git"
 INSTALL_DIR="$HOME/dashboard"
 MAIN_FILE="$INSTALL_DIR/main.py"
+CONFIG_FILE="$INSTALL_DIR/dashboard_config.json"
 SERVICE_TEMPLATE="$INSTALL_DIR/epaper-dashboard.service"
 SERVICE_FILE="/etc/systemd/system/epaper-dashboard.service"
 DASH_USER="$(id -un)"
@@ -116,24 +113,41 @@ if [ ! -f "$MAIN_FILE" ]; then
   exit 1
 fi
 
-CURRENT_LAT="$(grep -E '^LOCATION_LAT =' "$MAIN_FILE" | head -n1 | cut -d'=' -f2- | xargs)"
-CURRENT_LON="$(grep -E '^LOCATION_LON =' "$MAIN_FILE" | head -n1 | cut -d'=' -f2- | xargs)"
+CURRENT_CONFIG="$(CONFIG_FILE="$CONFIG_FILE" python3 - <<'PY'
+import json
+import os
+import pathlib
+import shlex
 
-CURRENT_STRAVA="$(grep -E '^ENABLE_STRAVA =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_BAMBU="$(grep -E '^ENABLE_BAMBU =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_ROBOROCK="$(grep -E '^ENABLE_ROBOROCK =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_ANTIGRAVITY="$(grep -E '^ENABLE_ANTIGRAVITY =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_CLAUDE="$(grep -E '^ENABLE_CLAUDE =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_OPENAI="$(grep -E '^ENABLE_OPENAI =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
-CURRENT_SPOTIFY="$(grep -E '^ENABLE_SPOTIFY =' "$MAIN_FILE" | head -n1 | awk '{print $3}')"
+path = pathlib.Path(os.environ["CONFIG_FILE"])
+try:
+    config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+except (OSError, json.JSONDecodeError):
+    config = {}
 
-[ "$CURRENT_STRAVA" = "True" ] && DEF_STRAVA="y" || DEF_STRAVA="n"
-[ "$CURRENT_BAMBU" = "True" ] && DEF_BAMBU="y" || DEF_BAMBU="n"
-[ "$CURRENT_ROBOROCK" = "True" ] && DEF_ROBOROCK="y" || DEF_ROBOROCK="n"
-[ "$CURRENT_ANTIGRAVITY" = "True" ] && DEF_ANTIGRAVITY="y" || DEF_ANTIGRAVITY="n"
-[ "$CURRENT_CLAUDE" = "True" ] && DEF_CLAUDE="y" || DEF_CLAUDE="n"
-[ "$CURRENT_OPENAI" = "True" ] && DEF_OPENAI="y" || DEF_OPENAI="n"
-[ "$CURRENT_SPOTIFY" = "True" ] && DEF_SPOTIFY="y" || DEF_SPOTIFY="n"
+location = config.get("location", {}) if isinstance(config.get("location"), dict) else {}
+widgets = config.get("widgets", {}) if isinstance(config.get("widgets"), dict) else {}
+
+def yn(name):
+    return "y" if widgets.get(name, False) else "n"
+
+values = {
+    "CURRENT_LAT": location.get("lat", "44.8240855"),
+    "CURRENT_LON": location.get("lon", "20.4934273"),
+    "DEF_STRAVA": yn("strava"),
+    "DEF_BAMBU": yn("bambu"),
+    "DEF_ROBOROCK": yn("roborock"),
+    "DEF_ANTIGRAVITY": yn("antigravity"),
+    "DEF_CLAUDE": yn("claude"),
+    "DEF_OPENAI": yn("openai"),
+    "DEF_SPOTIFY": yn("spotify")
+}
+
+for key, value in values.items():
+    print(f"{key}={shlex.quote(str(value))}")
+PY
+)"
+eval "$CURRENT_CONFIG"
 
 echo "Set your location for weather and sunrise/sunset calculations."
 GPS_LAT="$(prompt_value 'GPS latitude' "${CURRENT_LAT:-44.8240855}")"
@@ -193,47 +207,64 @@ LASTFM_API_KEY=$LASTFM_API_KEY
 LASTFM_USERNAME=$LASTFM_USERNAME
 CFG
 
-section "Patching main.py"
-sed -i "s|^LOCATION_LAT = .*|LOCATION_LAT = $GPS_LAT|" "$MAIN_FILE"
-sed -i "s|^LOCATION_LON = .*|LOCATION_LON = $GPS_LON|" "$MAIN_FILE"
+section "Writing dashboard_config.json"
+export CONFIG_FILE GPS_LAT GPS_LON ENABLE_STRAVA ENABLE_BAMBU ENABLE_ROBOROCK ENABLE_ANTIGRAVITY ENABLE_CLAUDE ENABLE_OPENAI ENABLE_SPOTIFY
+export BAMBU_IP BAMBU_SERIAL BAMBU_ACCESS_CODE ROBOROCK_EMAIL LASTFM_API_KEY LASTFM_USERNAME
+python3 - <<'PY'
+import json
+import os
+import pathlib
 
-sed -i "s|^ENABLE_STRAVA = .*|ENABLE_STRAVA = $ENABLE_STRAVA|" "$MAIN_FILE"
-sed -i "s|^ENABLE_BAMBU = .*|ENABLE_BAMBU = $ENABLE_BAMBU|" "$MAIN_FILE"
-sed -i "s|^ENABLE_ROBOROCK = .*|ENABLE_ROBOROCK = $ENABLE_ROBOROCK|" "$MAIN_FILE"
-sed -i "s|^ENABLE_ANTIGRAVITY = .*|ENABLE_ANTIGRAVITY = $ENABLE_ANTIGRAVITY|" "$MAIN_FILE"
-sed -i "s|^ENABLE_CLAUDE = .*|ENABLE_CLAUDE = $ENABLE_CLAUDE|" "$MAIN_FILE"
-sed -i "s|^ENABLE_OPENAI = .*|ENABLE_OPENAI = $ENABLE_OPENAI|" "$MAIN_FILE"
-sed -i "s|^ENABLE_SPOTIFY = .*|ENABLE_SPOTIFY = $ENABLE_SPOTIFY|" "$MAIN_FILE"
+path = pathlib.Path(os.environ["CONFIG_FILE"])
+try:
+    config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+except (OSError, json.JSONDecodeError):
+    config = {}
 
-if [ "$ENABLE_BAMBU" = "True" ]; then
-  BAMBU_IP_ESC="$(escape_py "$BAMBU_IP")"
-  BAMBU_SERIAL_ESC="$(escape_py "$BAMBU_SERIAL")"
-  BAMBU_ACCESS_ESC="$(escape_py "$BAMBU_ACCESS_CODE")"
-  sed -i "/^PRINTER_CONF = {/,/^}/c\\
-PRINTER_CONF = {\\
-    'IP': '$BAMBU_IP_ESC',\\
-    'SERIAL': '$BAMBU_SERIAL_ESC',\\
-    'ACCESS_CODE': '$BAMBU_ACCESS_ESC'\\
-}" "$MAIN_FILE"
-fi
+def enabled(name):
+    return os.environ.get(name) == "True"
 
-if [ "$ENABLE_ROBOROCK" = "True" ]; then
-  ROBOROCK_EMAIL_ESC="$(escape_py "$ROBOROCK_EMAIL")"
-  sed -i "/^ROBOROCK_CONF = {/,/^}/c\\
-ROBOROCK_CONF = {\\
-    'EMAIL': '$ROBOROCK_EMAIL_ESC'\\
-}" "$MAIN_FILE"
-fi
+def value(name):
+    return os.environ.get(name, "").strip()
 
-if [ "$ENABLE_SPOTIFY" = "True" ]; then
-  LASTFM_API_ESC="$(escape_py "$LASTFM_API_KEY")"
-  LASTFM_USER_ESC="$(escape_py "$LASTFM_USERNAME")"
-  sed -i "/^LASTFM_CONF = {/,/^}/c\\
-LASTFM_CONF = {\\
-    'API_KEY': '$LASTFM_API_ESC',\\
-    'USERNAME': '$LASTFM_USER_ESC'\\
-}" "$MAIN_FILE"
-fi
+config["version"] = 1
+config["location"] = {
+    "lat": float(os.environ["GPS_LAT"]),
+    "lon": float(os.environ["GPS_LON"])
+}
+config["widgets"] = {
+    "strava": enabled("ENABLE_STRAVA"),
+    "bambu": enabled("ENABLE_BAMBU"),
+    "roborock": enabled("ENABLE_ROBOROCK"),
+    "antigravity": enabled("ENABLE_ANTIGRAVITY"),
+    "claude": enabled("ENABLE_CLAUDE"),
+    "openai": enabled("ENABLE_OPENAI"),
+    "spotify": enabled("ENABLE_SPOTIFY")
+}
+
+integrations = config.setdefault("integrations", {})
+bambu = integrations.setdefault("bambu", {})
+if enabled("ENABLE_BAMBU") or any(value(name) for name in ("BAMBU_IP", "BAMBU_SERIAL", "BAMBU_ACCESS_CODE")):
+    bambu["ip"] = value("BAMBU_IP")
+    bambu["serial"] = value("BAMBU_SERIAL")
+    bambu["access_code"] = value("BAMBU_ACCESS_CODE")
+
+roborock = integrations.setdefault("roborock", {})
+if enabled("ENABLE_ROBOROCK") or value("ROBOROCK_EMAIL"):
+    roborock["email"] = value("ROBOROCK_EMAIL")
+
+lastfm = integrations.setdefault("lastfm", {})
+if enabled("ENABLE_SPOTIFY") or any(value(name) for name in ("LASTFM_API_KEY", "LASTFM_USERNAME")):
+    lastfm["api_key"] = value("LASTFM_API_KEY")
+    lastfm["username"] = value("LASTFM_USERNAME")
+
+openai = integrations.setdefault("openai", {})
+openai.setdefault("label", "OPENAI / CODEX")
+openai.setdefault("project_ids", [])
+openai.setdefault("model_filters", ["gpt-5-codex", "gpt-5.3-codex", "codex-mini-latest"])
+
+path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
 
 section "Installing systemd service"
 if [ ! -f "$SERVICE_TEMPLATE" ]; then
@@ -265,6 +296,10 @@ echo "  sudo systemctl status epaper-dashboard"
 echo "  sudo systemctl restart epaper-dashboard"
 echo "  sudo systemctl stop epaper-dashboard"
 echo "  journalctl -u epaper-dashboard -f"
+echo ""
+echo "Configurator:"
+echo "  python3 ~/dashboard/config_server.py --host 0.0.0.0 --port 8080"
+echo "  python3 ~/dashboard/config_server.py --host 0.0.0.0 --port 8080 --allow-restart"
 echo ""
 echo "OAuth reminder: for each enabled OAuth widget (Strava, Claude, OpenAI/Codex), run once as user '$DASH_USER':"
 echo "  sudo -u $DASH_USER python3 ~/dashboard/main.py"
