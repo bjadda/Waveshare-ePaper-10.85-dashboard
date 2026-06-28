@@ -1,24 +1,34 @@
-# Waveshare-ePaper-10.85 Dashboard
+<h1 align="center">Waveshare e-Paper 10.85 Dashboard</h1>
 
-A fully functional E-ink dashboard running on a Raspberry Pi Zero 2W. Designed for large Waveshare e-Paper displays (e.g., 10.85"), this project aggregates essential daily information and smart home status into a clean, minimalist interface.
+<p align="center">
+  Raspberry Pi Zero 2W dashboard for the Waveshare 10.85-inch e-paper panel. Built for glanceable home, device, and usage data with partial-refresh rendering and local configuration.
+</p>
+
+<p align="center">
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard"><img alt="GitHub repository" src="https://img.shields.io/badge/GitHub-Repository-24292f?logo=github"></a>
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/issues"><img alt="GitHub issues" src="https://img.shields.io/github/issues/bjadda/Waveshare-ePaper-10.85-dashboard?logo=github"></a>
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/pulls"><img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/bjadda/Waveshare-ePaper-10.85-dashboard?logo=github"></a>
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/commits/main"><img alt="Latest commit" src="https://img.shields.io/github/last-commit/bjadda/Waveshare-ePaper-10.85-dashboard?logo=github"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard"><strong>Repository</strong></a> |
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/issues/new"><strong>Report an issue</strong></a> |
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/fork"><strong>Fork</strong></a>
+</p>
+
+| Primary dashboard | Fallback dashboard |
+| --- | --- |
+| <img width="1200" alt="Primary e-paper dashboard layout" src="https://github.com/user-attachments/assets/20be2eae-4a06-48e2-9ad4-efcba00dcb7f" /> | <img width="1200" alt="Fallback e-paper dashboard layout" src="https://github.com/user-attachments/assets/158d65ee-9a12-4f09-a9d3-ea66ca3055bc" /> |
 
 ## Key Features
 
-* **(NEW!) Antigravity usage data:** Displays usage data for Antigravity, showing the limit, and limit reset time.
-* **OpenAI / Codex usage data:** Reuses local Codex CLI login when available to show Codex plan/rate-limit status, or falls back to OpenAI organization usage scoped to Codex models.
-* **Claude Code usage data:** Displays usage data for Claude Code, showing the daily limit, weekly limit, and limit reset time.
-* **Weather & Air Quality:** Real-time temperature, humidity, wind direction/speed, UV index, 4-hour forecast, and AQI (with visual inversion for high pollution levels) using the Open-Meteo API.
-* **Strava Integration:** Displays total and yearly activity statistics (distance and ride counts), including specific breakdowns for biking and hiking.
-* **Bambu Lab 3D Printer:** Live monitoring of print status, completion percentage, remaining time, and current layer progress.
-* **Roborock Vacuum:** Live battery level, current status, and tracking for cleaned area during active cleaning.
-* **Spotify:** Displays the currently playing track and artist.
-* **Gmail:** Tracks the number of unread emails in your primary inbox.
-* **System Fallbacks:** Automatically switches to displaying System Load (CPU/RAM usage) or Cryptocurrency prices (BTC/ETH) if certain hardware integrations are disabled or offline for demonstration of dashboard capabilities. The fallback wedgets are not required tokens and ready to go.
-* **Optimized Rendering:** Uses partial screen refreshes to prevent flickering, with scheduled full refreshes to clear e-ink ghosting.
-* **Web Configurator:** Provides a local, accessible browser UI for widget toggles, slot rotation, credentials, and location settings.
-
-<img width="2400" height="1792" alt="dashboard_primary" src="https://github.com/user-attachments/assets/20be2eae-4a06-48e2-9ad4-efcba00dcb7f" />
-<img width="2400" height="1792" alt="dashboard_fallback" src="https://github.com/user-attachments/assets/158d65ee-9a12-4f09-a9d3-ea66ca3055bc" />
+* **Web Configurator:** Local browser UI for widget toggles, slot rotation, credentials, and location settings.
+* **Dynamic Widget Slots:** Assign priority fallbacks or timed rotation per screen region.
+* **Patched Partial Refresh:** Uses a local Waveshare driver patch for safer rectangular updates on the 10.85-inch panel.
+* **AI Usage Widgets:** Shows OpenAI/Codex, Claude Code, and Antigravity usage windows where credentials are available.
+* **Home & Device Widgets:** Weather, AQI, Strava, Bambu Lab, Roborock, Spotify via Last.fm, Gmail, system load, crypto, and network ping.
+* **Pi-Friendly Runtime:** Plain Python, systemd autostart, no frontend build chain on the device.
 
 ---
 
@@ -76,11 +86,11 @@ Go to Interfacing Options -> SPI -> Enable.
 
 Update your system and install necessary system-level dependencies, including `tmux` for keeping the script running in the background:
 `sudo apt update`
-`sudo apt install python3-pip python3-pil python3-numpy git tmux -y`
+`sudo apt install python3-pip python3-pil python3-numpy python3-spidev python3-gpiozero git tmux -y`
 
 ### 2. Python Dependencies
 Install the required standard Python packages:
-`pip3 install requests Pillow google-api-python-client google-auth-httplib2 google-auth-oauthlib aiomqtt roborock`
+`pip3 install -r requirements.txt`
 
 *Note: `bambulabs_api` library already included in this package.*
 
@@ -91,9 +101,26 @@ The **patched** version of the epd10in85 library with fixed partial refresh issu
 
 ---
 
+## Repo Map
+
+| Path | Purpose |
+| --- | --- |
+| `main.py` | Runtime loop, data fetching, e-paper rendering orchestration. |
+| `dashboard_widgets.py` | Widget drawing functions and screen-region rendering. |
+| `dashboard_config.py` | JSON config loading, validation, defaults merge, and atomic save. |
+| `dashboard_defaults.py` | Shared defaults used by the dashboard, installer, and configurator. |
+| `config_server.py` | Local accessible web configurator with no build step. |
+| `install.sh` | Raspberry Pi bootstrap, config collection, dependencies, and systemd setup. |
+| `lib/waveshare_epd/` | Bundled Waveshare display driver, including the local 10.85 partial-refresh patch. |
+
+## Credits and Changes
+
+Credit is tracked in [`CREDITS.md`](CREDITS.md). In short: Waveshare provides the display driver base, bundled local libraries keep the Pi install practical, GitHub Copilot assisted the installer PR, and this dashboard adds the modular widget system, runtime JSON config, web configurator, and partial-refresh patch.
+
+---
 ## Configuration & Widget Setup
 
-Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, or edit the JSON file directly. Source defaults remain in `dashboard_defaults.py`, and `main.py` loads the merged config at startup.
+Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, copy `dashboard_config.example.json` as a manual starting point, or edit the JSON directly. Source defaults remain in `dashboard_defaults.py`, and `main.py` loads the merged config at startup.
 
 ### Dynamic Widget Slots
 

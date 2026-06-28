@@ -53,6 +53,7 @@ REPO_URL="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard.git"
 INSTALL_DIR="$HOME/dashboard"
 MAIN_FILE="$INSTALL_DIR/main.py"
 CONFIG_FILE="$INSTALL_DIR/dashboard_config.json"
+REQUIREMENTS_FILE="$INSTALL_DIR/requirements.txt"
 SERVICE_TEMPLATE="$INSTALL_DIR/epaper-dashboard.service"
 SERVICE_FILE="/etc/systemd/system/epaper-dashboard.service"
 DASH_USER="$(id -un)"
@@ -99,12 +100,17 @@ fi
 
 section "Installing system dependencies"
 sudo apt update
-sudo apt install -y python3-pip python3-pil python3-numpy git tmux
+sudo apt install -y python3-pip python3-pil python3-numpy python3-spidev python3-gpiozero git tmux
 
 section "Installing Python dependencies"
-if ! pip3 install requests Pillow google-api-python-client google-auth-httplib2 google-auth-oauthlib aiomqtt roborock; then
+if [ ! -f "$REQUIREMENTS_FILE" ]; then
+  error "Expected requirements file not found: $REQUIREMENTS_FILE"
+  exit 1
+fi
+
+if ! pip3 install -r "$REQUIREMENTS_FILE"; then
   warn "Standard pip install failed (likely due to PEP 668 on newer OS versions); retrying with --break-system-packages"
-  pip3 install --break-system-packages requests Pillow google-api-python-client google-auth-httplib2 google-auth-oauthlib aiomqtt roborock
+  pip3 install --break-system-packages -r "$REQUIREMENTS_FILE"
 fi
 
 section "Collecting configuration"

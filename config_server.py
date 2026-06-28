@@ -107,6 +107,7 @@ HTML = r"""<!doctype html>
     <symbol id="icon-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5"/><path d="M12 17h8"/></symbol>
+    <symbol id="icon-github" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.1-1.5 6.1-6.7a5.2 5.2 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.7 1.4a12.8 12.8 0 0 0-6.8 0C6.6 2.3 5.5 2.6 5.5 2.6a4.8 4.8 0 0 0-.1 3.6A5.2 5.2 0 0 0 4 9.8c0 5.2 3.1 6.4 6.1 6.7a3 3 0 0 0-.8 1.9V22"/></symbol>
   </svg>
 
   <a class="skip-link" href="#settings">Skip to settings</a>
@@ -120,6 +121,16 @@ HTML = r"""<!doctype html>
           <h1>Dashboard control panel</h1>
         </div>
       </div>
+      <nav class="github-actions" aria-label="Project links">
+        <a class="github-link" href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard">
+          <svg aria-hidden="true"><use href="#icon-github"></use></svg>
+          Repository
+        </a>
+        <a class="github-link" href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/issues">
+          <svg aria-hidden="true"><use href="#icon-github"></use></svg>
+          Issues
+        </a>
+      </nav>
       <div class="status-stack">
         <span id="saveStatus" class="status-pill" role="status" aria-live="polite">Loading config</span>
         <span id="configPath" class="path-label"></span>
@@ -351,6 +362,7 @@ svg {
 .settings-header,
 .panel-heading,
 .brand,
+.github-actions,
 .action-row,
 .preview-footer,
 .status-stack {
@@ -362,6 +374,32 @@ svg {
   justify-content: space-between;
   gap: 20px;
   padding: 8px 0 20px;
+}
+
+.github-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.github-link:hover {
+  border-color: var(--cyan);
+  color: var(--cyan-dark);
 }
 
 .brand {
@@ -906,6 +944,7 @@ textarea {
     flex-direction: column;
   }
 
+  .github-actions,
   .status-stack,
   .action-row,
   .preview-footer {

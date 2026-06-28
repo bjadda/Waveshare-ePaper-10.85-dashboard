@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "location": {
+    "lat": 44.8240855,
+    "lon": 20.4934273
+  },
+  "widgets": {
+    "strava": false,
+    "bambu": false,
+    "roborock": false,
+    "antigravity": false,
+    "claude": false,
+    "openai": false,
+    "spotify": false
+  },
+  "integrations": {
+    "bambu": {
+      "ip": "",
+      "serial": "",
+      "access_code": ""
+    },
+    "roborock": {
+      "email": ""
+    },
+    "lastfm": {
+      "api_key": "",
+      "username": ""
+    },
+    "openai": {
+      "label": "OPENAI / CODEX",
+      "project_ids": [],
+      "model_filters": [
+        "gpt-5-codex",
+        "gpt-5.3-codex",
+        "codex-mini-latest"
+      ]
+    }
+  },
+  "slots": {
+    "left_top": {
+      "widgets": [
+        "strava",
+        "sysload"
+      ],
+      "rotate": false,
+      "seconds": 300
+    },
+    "left_middle": {
+      "widgets": [
+        "bambu",
+        "crypto"
+      ],
+      "rotate": false,
+      "seconds": 300
+    },
+    "left_bottom": {
+      "widgets": [
+        "roborock",
+        "antigravity",
+        "ping"
+      ],
+      "rotate": false,
+      "seconds": 300
+    },
+    "right_middle": {
+      "widgets": [
+        "ai_usage",
+        "spotify",
+        "time_progress"
+      ],
+      "rotate": false,
+      "seconds": 300
+    }
+  }
+}

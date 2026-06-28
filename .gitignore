@@ -12,6 +12,8 @@ roborock_session.pkl
 roborock_stats.json
 
 # Python/runtime caches
+.venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
