@@ -1,14 +1,19 @@
 # Runtime configuration and credentials
 config.env
 dashboard_config.json
-dashboard.log
+credentials.json
 *_creds.json
 *_token.json
-openai_usage.json
-usage.json
 token.json
 strava_token.json
 roborock_session.pkl
+
+# Runtime data and logs
+*.log
+*.log.*
+openai_usage.json
+usage.json
+limits.json
 roborock_stats.json
 
 # Python/runtime caches

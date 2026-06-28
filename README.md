@@ -1,7 +1,7 @@
 <h1 align="center">Waveshare e-Paper 10.85 Dashboard</h1>
 
 <p align="center">
-  Raspberry Pi Zero 2W dashboard for the Waveshare 10.85-inch e-paper panel. Built for glanceable home, device, and usage data with partial-refresh rendering and local configuration.
+  A Raspberry Pi Zero 2W dashboard for the Waveshare 10.85-inch e-paper panel. It renders glanceable home, device, and usage data with local configuration and careful partial refreshes.
 </p>
 
 <p align="center">
@@ -14,231 +14,107 @@
 <p align="center">
   <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard"><strong>Repository</strong></a> |
   <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/issues/new"><strong>Report an issue</strong></a> |
-  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/fork"><strong>Fork</strong></a>
+  <a href="https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/fork"><strong>Fork</strong></a> |
+  <a href="CONTRIBUTING.md"><strong>Contribute</strong></a>
 </p>
 
 | Primary dashboard | Fallback dashboard |
 | --- | --- |
 | <img width="1200" alt="Primary e-paper dashboard layout" src="https://github.com/user-attachments/assets/20be2eae-4a06-48e2-9ad4-efcba00dcb7f" /> | <img width="1200" alt="Fallback e-paper dashboard layout" src="https://github.com/user-attachments/assets/158d65ee-9a12-4f09-a9d3-ea66ca3055bc" /> |
 
-## Key Features
+## What It Does
 
-* **Web Configurator:** Local browser UI for widget toggles, slot rotation, credentials, and location settings.
-* **Dynamic Widget Slots:** Assign priority fallbacks or timed rotation per screen region.
-* **Patched Partial Refresh:** Uses a local Waveshare driver patch for safer rectangular updates on the 10.85-inch panel.
-* **AI Usage Widgets:** Shows OpenAI/Codex, Claude Code, and Antigravity usage windows where credentials are available.
-* **Home & Device Widgets:** Weather, AQI, Strava, Bambu Lab, Roborock, Spotify via Last.fm, Gmail, system load, crypto, and network ping.
-* **Pi-Friendly Runtime:** Plain Python, systemd autostart, no frontend build chain on the device.
+- Runs on a Raspberry Pi Zero 2W with the Waveshare 10.85-inch e-paper panel.
+- Uses a patched local driver for safer rectangular partial refreshes.
+- Lets you choose widgets and slot rotation through a local web configurator.
+- Shows home, device, weather, usage, network, and productivity widgets.
+- Keeps secrets local in ignored runtime files.
+- Falls back to logs when a widget, API, or hardware refresh misbehaves.
 
-## Visualization Ideas
+## Install
 
-![Four e-paper dashboard concept layouts for personal, work, home operations, and focus dashboards](docs/visualization-ideas.svg)
-
-The same slot system can support layouts beyond the current home dashboard:
-
-* **Personal dayboard:** family calendar, commute/weather, package status, training load, chores, and meal reminders.
-* **Work / IT architect:** service dependency map, SLO health, incident queue, deploy windows, cloud spend, focus blocks, and next architecture review.
-* **Home operations:** network health, power/solar use, sensor alerts, printer/vacuum state, NAS capacity, and backup status.
-* **Focus and learning:** deep-work timer, reading queue, habit streaks, recovery metrics, language practice, and daily notes.
-
-The visual source is [`docs/visualization-ideas.svg`](docs/visualization-ideas.svg), so it can be edited in plain text.
-
----
-
-## Quick Install (Recommended)
-
-Run this single command on your Raspberry Pi:
+Run this on the Raspberry Pi:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/bjadda/Waveshare-ePaper-10.85-dashboard/main/install.sh | bash
 ```
 
-The installer will:
-- Enable SPI automatically
-- Install all system and Python dependencies
-- Walk you through configuring each widget
-- Write `dashboard_config.json` for runtime configuration
-- Set up the dashboard to start automatically on boot
+The installer enables SPI, installs dependencies, writes `dashboard_config.json`, and creates the `epaper-dashboard` systemd service.
 
-### Managing the service
+Hardware:
 
-```bash
-sudo systemctl status epaper-dashboard   # Check status
-sudo systemctl restart epaper-dashboard  # Restart
-journalctl -u epaper-dashboard -f        # Live logs
-```
+- Raspberry Pi Zero 2W
+- Waveshare 10.85-inch e-Paper HAT+
+- SPI enabled on Raspberry Pi OS
 
-### Web Configurator
+## Case And Assembly
 
-Run the local configurator from the dashboard directory:
+- 3D printed case: [MakerWorld model](https://makerworld.com/en/models/2322517-epaper-dashboard-waveshare-10-85).
+- Assembly video: [YouTube guide](https://youtu.be/H964RpaJvu0).
+
+## Configure
+
+Start the local configurator from the installed dashboard directory:
 
 ```bash
 cd ~/dashboard
 python3 config_server.py --host 0.0.0.0 --port 8080
 ```
 
-Then open `http://<pi-ip>:8080` from a browser on the same trusted network. The UI writes `dashboard_config.json`; restart the service after saving if the dashboard is already running:
+Open `http://<pi-ip>:8080` from a browser on the same trusted network. The configurator writes `dashboard_config.json`.
+
+Restart after saving:
 
 ```bash
 sudo systemctl restart epaper-dashboard
 ```
 
-Use `--allow-restart` if you want the configurator's restart button to call systemd for you.
+Manual config starts from `config/dashboard_config.example.json`. Detailed widget setup lives in [docs/WIDGETS.md](docs/WIDGETS.md).
 
-<details>
-<summary>Manual Installation</summary>
+## Run And Debug
 
-### Hardware
-* [Raspberry Pi Zero 2W](https://www.raspberrypi.com/products/raspberry-pi-zero-2-w/)
-* [Waveshare E-Ink Display 10.85"](https://www.waveshare.com/10.85inch-e-paper-hat-plus.htm?sku=29790)
+Useful service commands:
 
-### 1. System Setup
-Enable the SPI interface on your Raspberry Pi, which is required for communicating with the e-ink display:
-`sudo raspi-config`
-Go to Interfacing Options -> SPI -> Enable.
+```bash
+sudo systemctl status epaper-dashboard
+sudo systemctl restart epaper-dashboard
+journalctl -u epaper-dashboard -f
+```
 
-Update your system and install necessary system-level dependencies, including `tmux` for keeping the script running in the background:
-`sudo apt update`
-`sudo apt install python3-pip python3-pil python3-numpy python3-spidev python3-gpiozero git tmux -y`
+When in doubt, fall back to logs:
 
-### 2. Python Dependencies
-Install the required standard Python packages:
-`pip3 install -r requirements.txt`
+- `journalctl -u epaper-dashboard -f` for systemd output.
+- `~/dashboard/dashboard.log` for the main render loop.
+- `~/dashboard/claude_monitor.log`, `~/dashboard/openai_monitor.log`, and `~/dashboard/limits.log` for usage widgets.
+- Run `python3 main.py` in the foreground when an OAuth flow or first-run prompt needs attention.
 
-*Note: `bambulabs_api` library already included in this package.*
+## Dashboard Ideas
 
-### 3. Display Library
-The **patched** version of the epd10in85 library with fixed partial refresh issue already included in this package.
+![Four e-paper dashboard concept layouts for personal, work, home operations, and focus dashboards](docs/visualization-ideas.svg)
 
-</details>
+Examples of what the same slot system can support:
 
----
+- Personal dayboard: weather, calendar, training, chores, commute, reminders.
+- Work or IT architecture: SLOs, incidents, deploy windows, cloud spend, focus blocks.
+- Home operations: network, solar or power use, sensors, NAS, printer, vacuum, backups.
+- Focus and learning: timer, reading queue, habits, recovery, daily notes.
 
-## Repo Map
+The editable visual source is [docs/visualization-ideas.svg](docs/visualization-ideas.svg).
+
+## Project Map
 
 | Path | Purpose |
 | --- | --- |
-| `main.py` | Runtime loop, data fetching, e-paper rendering orchestration. |
-| `dashboard/dashboard_widgets.py` | Widget drawing functions and screen-region rendering. |
-| `dashboard/dashboard_config.py` | JSON config loading, validation, defaults merge, and atomic save. |
-| `dashboard/dashboard_defaults.py` | Shared defaults used by the dashboard, installer, and configurator. |
-| `config_server.py` | Local accessible web configurator entry point with no build step. |
-| `install.sh` | Raspberry Pi bootstrap, config collection, dependencies, and systemd setup. |
-| `dashboard/` | Support package for widgets, config helpers, and usage-provider scripts. |
-| `config/dashboard_config.example.json` | Safe sample runtime config. |
-| `systemd/epaper-dashboard.service` | Service template installed by `install.sh`. |
-| `lib/waveshare_epd/` | Bundled Waveshare display driver, including the local 10.85 partial-refresh patch. |
+| `main.py` | Runtime loop, data fetching, and e-paper rendering. |
+| `config_server.py` | Local accessible web configurator. |
+| `dashboard/` | Widget rendering, config helpers, and usage-provider scripts. |
+| `config/` | Safe sample runtime config. |
+| `docs/` | Contributor and setup references that do not need to crowd the README. |
+| `lib/waveshare_epd/` | Bundled Waveshare driver with the local 10.85 partial-refresh patch. |
+| `systemd/` | Service template installed by `install.sh`. |
 
-## Credits and Changes
+## Participate
 
-Project credit is tracked in [`CREDITS.md`](CREDITS.md), which names [czuryk](https://github.com/czuryk) and [`czuryk/Waveshare-ePaper-10.85-dashboard`](https://github.com/czuryk/Waveshare-ePaper-10.85-dashboard) as the original repo. This branch adds the modular widget system, runtime JSON config, web configurator, partial-refresh patch, and the visual dashboard ideas shown above.
+Issues, experiments, hardware test notes, widget ideas, and small cleanup PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and read [SECURITY.md](SECURITY.md) before posting logs, configs, or credentials.
 
----
-
-## Configuration & Widget Setup
-
-Runtime settings now live in `dashboard_config.json`, which is intentionally ignored by git because it can contain local credentials. Use `config_server.py` for the easiest setup flow, copy `config/dashboard_config.example.json` as a manual starting point, or edit the JSON directly. Source defaults remain in `dashboard/dashboard_defaults.py`, and `main.py` loads the merged config at startup.
-
-### Dynamic Widget Slots
-
-The dashboard has named widget slots in `dashboard_config.json`, while widget drawing lives in `dashboard/dashboard_widgets.py`. Each slot lists the widgets it can show, in priority order. With `rotate: false`, the first currently available widget is shown, preserving the original fallback behavior. Set `rotate: true` and adjust `seconds` to cycle through all available widgets in that screen region.
-
-Example:
-
-```json
-"right_middle": {
-  "widgets": ["ai_usage", "spotify", "time_progress"],
-  "rotate": true,
-  "seconds": 300
-}
-```
-
-This rotates the right-middle area every five minutes while keeping the rest of the screen stable.
-
-### Claude Code
-1. Run the `main.py` script from the terminal for the first time.
-2. The script will pause, ask for your to copy the authorization URL and paste it on real browser.
-3. Open that URL in your browser, click "Authorize", and you will be redirected to a dead `localhost` page.
-7. Copy the whole URL containing `code=...` portion from your browser's address bar and paste it back into the terminal. The script will automatically fetch and save the required tokens to `claude_creds.json`.
-
-### OpenAI / Codex
-1. Enable the OpenAI / Codex widget in the web configurator or in `dashboard_config.json`.
-2. Preferred: sign in with the local `codex` CLI first. The widget will automatically reuse `~/.codex/auth.json` to fetch Codex plan/rate-limit status.
-3. Optional fallback: adjust the OpenAI project IDs and model filters in the web configurator or `dashboard_config.json`, then provide an **OpenAI Admin API key** when prompted. That path saves credentials to `openai_creds.json` and reads OpenAI organization usage totals from `openai_usage.json`.
-4. Run `main.py` from a terminal for the first time.
-
-> **Note:** The Codex ChatGPT path depends on the same undocumented backend endpoints used by the Codex CLI. If those requests are blocked, the widget gracefully falls back to the cached file or the optional OpenAI Admin API key path.
-
-### Strava
-1. Go to your Strava API Settings and create an API Application.
-2. Note down your **Client ID** and **Client Secret**.
-3. Run the `main.py` script from the terminal for the first time.
-4. The script will pause, ask for your ID/Secret, and print an authorization URL in the console. 
-5. Open that URL in your browser, click "Authorize", and you will be redirected to a dead `localhost` page.
-6. Copy the `code=...` portion from your browser's address bar and paste it back into the terminal. The script will automatically fetch and save the required `activity:read_all` tokens to `strava_token.json`.
-
-### Roborock
-1. Add your Roborock account email in the web configurator or in `dashboard_config.json`.
-2. Run the script from the terminal.
-3. The script will request an OTP (One-Time Password) which will be sent to your email.
-4. Enter the 6-digit code in the terminal. The script will securely save your session data locally.
-
-### Bambu Lab 3D Printer
-**You DON'T need to enable "LAN Mode" on your Bambu Lab printer to access local data.**
-1. On your printer's screen, go to **Settings -> Network**.
-2. Note your printer's **IP Address**, **Serial Number**, and **Access Code**. (Force on your router to map exact IP address)
-3. Add these local credentials in the web configurator or in `dashboard_config.json`.
-
-### Spotify (via Last.fm)
-Since the official Spotify API requires running a local web server for complex token renewals, this dashboard uses Last.fm to fetch the current playing track reliably form Spotify. It's is transparent and working method.
-1. Connect your Spotify account to Last.fm.
-2. Create a Last.fm API account to generate an **API Key**.
-3. Add your API key and username in the web configurator or in `dashboard_config.json`.
-   
-**After configuration, you no longer need to use the Last.fm service, and a paid Last.fm account is not required. You can continue to use only the Spotify service.**
-
-### Gmail
-1. Go to the Google Cloud Console.
-2. Create a new project and enable the **Gmail API**.
-3. Create OAuth 2.0 Client ID credentials (choose "Desktop Application" as the application type).
-4. Download the generated JSON file, rename it exactly to `credentials.json` (if your setup requires it, or just use `token.json` generation), and place it in the same directory as the script.
-5. On the first run, the script will open a browser window (or provide a link) for you to log in and grant read-only access. It will generate a `token.json` file for all future headless authentications.
-
----
-
-## Running the Dashboard
-
-To ensure the dashboard continues running even after you close your SSH connection, use `tmux`.
-
-1. Start a new tmux session:
-`tmux new -s dashboard`
-
-2. Run the script inside the tmux session:
-`python3 main.py`
-
-3. Detach from the session (leave it running in the background) by pressing:
-`Ctrl+B`, then release and press `D`.
-
-To reattach to the session later and view the logs or stop the script:
-`tmux attach -t dashboard`
-
-## How It Works
-
-The dashboard is built on a robust, multi-threaded architecture designed to keep the UI responsive and prevent hardware lockups.
-
-* **Asynchronous Data Fetching:** Instead of fetching all data sequentially, the script spawns dedicated background threads. Each service (Weather, Strava, Roborock, Bambu Lab, etc.) pulls data asynchronously at its own specific interval. This ensures that a slow API response or a temporary network drop from one service will never block the others or freeze the system.
-* **Scheduled Rendering:** The main application loop acts purely as a renderer. It collects the latest available information from a thread-safe global data store and pushes a new frame to the e-ink display exactly once per minute using a partial screen refresh. 
-
-**Important Notes:**
-
-* **Initial Data Population Delay:** When you first launch the script, you will notice that the widgets may show placeholders or zeros, and the full array of data takes a few minutes to completely appear on the screen. This is an intentional design choice to stagger initial network requests. It prevents sudden spikes in CPU usage, avoids overwhelming the Raspberry Pi's network stack, and respects the rate limits of the external APIs.
-* **Hardware Refresh Limits:** The 60-second rendering interval is strictly enforced. Refreshing the screen more frequently than once a minute is strongly discouraged by the display manufacturer (Waveshare). Aggressive refresh rates on large e-paper panels can lead to severe ghosting and may cause permanent hardware damage to the display.
-
-## The 3d printed case
-
-You can download the case stl files [here](https://makerworld.com/en/models/2322517-epaper-dashboard-waveshare-10-85).
-
-## Video assembly guide
-
-[![Video Title](https://img.youtube.com/vi/H964RpaJvu0/0.jpg)](https://youtu.be/H964RpaJvu0)
-(Youtube clickable)
+Project credit is tracked in [CREDITS.md](CREDITS.md). The original repository is [`czuryk/Waveshare-ePaper-10.85-dashboard`](https://github.com/czuryk/Waveshare-ePaper-10.85-dashboard).
