@@ -17,9 +17,9 @@ import pickle
 import subprocess
 import urllib.parse
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance
-from dashboard import dashboard_config, dashboard_defaults, dashboard_widgets
+from dashboard import dashboard_config, dashboard_defaults, dashboard_registry, dashboard_widgets
 from logging.handlers import RotatingFileHandler
 
 # --- GMAIL IMPORTS ---
@@ -51,6 +51,9 @@ ENABLE_ANTIGRAVITY = dashboard_defaults.DEFAULT_WIDGETS['antigravity']
 ENABLE_CLAUDE = dashboard_defaults.DEFAULT_WIDGETS['claude']
 ENABLE_OPENAI = dashboard_defaults.DEFAULT_WIDGETS['openai']
 ENABLE_SPOTIFY = dashboard_defaults.DEFAULT_WIDGETS['spotify']
+ENABLE_CALENDAR = dashboard_defaults.DEFAULT_WIDGETS['calendar']
+ENABLE_HOMEASSISTANT = dashboard_defaults.DEFAULT_WIDGETS['homeassistant']
+ENABLE_GITHUB = dashboard_defaults.DEFAULT_WIDGETS['github']
 
 # --- DYNAMIC WIDGET SLOTS ---
 # Each slot keeps today's first-available fallback behavior by default.
@@ -63,6 +66,9 @@ WIDGET_SLOTS = {
     }
     for slot_name, slot in dashboard_defaults.DEFAULT_WIDGET_SLOTS.items()
 }
+ACTIVE_PROFILE = 'home'
+SCREEN_REGIONS = dashboard_defaults.DEFAULT_REGIONS.copy()
+WIDGET_REFRESH = dict(dashboard_defaults.DEFAULT_REFRESH)
 def widget_slot_can_show(widget_id):
     for slot in WIDGET_SLOTS.values():
         widgets = slot.get('widgets', ())
@@ -99,12 +105,32 @@ OPENAI_CONF = {
     'MODEL_FILTERS': list(dashboard_defaults.DEFAULT_OPENAI_CONF['MODEL_FILTERS'])
 }
 
+CALENDAR_CONF = {
+    'LABEL': 'CALENDAR',
+    'URLS': [],
+    'PATH': '',
+    'LOOKAHEAD_DAYS': 14,
+    'MAX_EVENTS': 3
+}
+
+HOMEASSISTANT_CONF = {
+    'BASE_URL': '',
+    'TOKEN': '',
+    'ENTITIES': []
+}
+
+GITHUB_CONF = {
+    'LABEL': 'GITHUB / DEVOPS',
+    'TOKEN': '',
+    'REPOSITORIES': []
+}
 
 def apply_dashboard_config():
     global LOCATION_LAT, LOCATION_LON
     global ENABLE_STRAVA, ENABLE_BAMBU, ENABLE_ROBOROCK, ENABLE_ANTIGRAVITY
     global ENABLE_CLAUDE, ENABLE_OPENAI, ENABLE_SPOTIFY
-    global WIDGET_SLOTS
+    global ENABLE_CALENDAR, ENABLE_HOMEASSISTANT, ENABLE_GITHUB
+    global WIDGET_SLOTS, ACTIVE_PROFILE, SCREEN_REGIONS, WIDGET_REFRESH
 
     config = dashboard_config.load_config(BASE_DIR, dashboard_defaults.dashboard_config_defaults())
 
@@ -118,6 +144,9 @@ def apply_dashboard_config():
     ENABLE_CLAUDE = config['widgets']['claude']
     ENABLE_OPENAI = config['widgets']['openai']
     ENABLE_SPOTIFY = config['widgets']['spotify']
+    ENABLE_CALENDAR = config['widgets']['calendar']
+    ENABLE_HOMEASSISTANT = config['widgets']['homeassistant']
+    ENABLE_GITHUB = config['widgets']['github']
 
     PRINTER_CONF.update({
         'IP': config['integrations']['bambu']['ip'],
@@ -136,6 +165,27 @@ def apply_dashboard_config():
         'PROJECT_IDS': config['integrations']['openai']['project_ids'],
         'MODEL_FILTERS': config['integrations']['openai']['model_filters']
     })
+    CALENDAR_CONF.update({
+        'LABEL': config['integrations']['calendar']['label'],
+        'URLS': config['integrations']['calendar']['urls'],
+        'PATH': config['integrations']['calendar']['path'],
+        'LOOKAHEAD_DAYS': config['integrations']['calendar']['lookahead_days'],
+        'MAX_EVENTS': config['integrations']['calendar']['max_events']
+    })
+    HOMEASSISTANT_CONF.update({
+        'BASE_URL': config['integrations']['homeassistant']['base_url'],
+        'TOKEN': config['integrations']['homeassistant']['token'],
+        'ENTITIES': config['integrations']['homeassistant']['entities']
+    })
+    GITHUB_CONF.update({
+        'LABEL': config['integrations']['github']['label'],
+        'TOKEN': config['integrations']['github']['token'],
+        'REPOSITORIES': config['integrations']['github']['repositories']
+    })
+
+    ACTIVE_PROFILE = config.get('active_profile', 'home')
+    SCREEN_REGIONS = config.get('regions', dashboard_defaults.DEFAULT_REGIONS)
+    WIDGET_REFRESH = config.get('refresh', dashboard_defaults.DEFAULT_REFRESH)
 
     WIDGET_SLOTS = {
         slot_name: {
@@ -247,6 +297,225 @@ class NetworkManager:
 net = NetworkManager()
 
 
+def refresh_seconds(widget_id, default):
+    return dashboard_config.int_value(
+        WIDGET_REFRESH.get(widget_id), default, minimum=5, maximum=86400
+    )
+
+
+def current_utc_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def unfold_ics_lines(text):
+    lines = []
+    for raw_line in text.replace('\r\n', '\n').replace('\r', '\n').split('\n'):
+        if raw_line.startswith((' ', '\t')) and lines:
+            lines[-1] += raw_line[1:]
+        else:
+            lines.append(raw_line)
+    return lines
+
+
+def parse_ics_datetime(value, key):
+    value = str(value or '').strip()
+    key_upper = str(key or '').upper()
+    all_day = 'VALUE=DATE' in key_upper or (len(value) == 8 and value.isdigit())
+    try:
+        if all_day:
+            dt = datetime.strptime(value[:8], '%Y%m%d').replace(tzinfo=timezone.utc)
+            return dt, True
+        if value.endswith('Z'):
+            return datetime.strptime(value, '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc), False
+        dt = datetime.strptime(value[:15], '%Y%m%dT%H%M%S')
+        return dt.replace(tzinfo=timezone.utc), False
+    except (TypeError, ValueError):
+        return None, all_day
+
+
+def clean_ics_text(value):
+    return str(value or '').replace('\\n', ' ').replace('\\,', ',').replace('\\;', ';').strip()
+
+
+def parse_ics_events(text):
+    events = []
+    current = None
+    for line in unfold_ics_lines(text):
+        if not line:
+            continue
+        upper = line.upper()
+        if upper == 'BEGIN:VEVENT':
+            current = {}
+            continue
+        if upper == 'END:VEVENT':
+            if current:
+                events.append(current)
+            current = None
+            continue
+        if current is None or ':' not in line:
+            continue
+        key, value = line.split(':', 1)
+        key_name = key.split(';', 1)[0].upper()
+        if key_name == 'SUMMARY':
+            current['title'] = clean_ics_text(value)
+        elif key_name == 'LOCATION':
+            current['location'] = clean_ics_text(value)
+        elif key_name == 'DTSTART':
+            start, all_day = parse_ics_datetime(value, key)
+            if start:
+                current['start_dt'] = start
+                current['start'] = start.isoformat()
+                current['all_day'] = all_day
+        elif key_name == 'DTEND':
+            end, _ = parse_ics_datetime(value, key)
+            if end:
+                current['end'] = end.isoformat()
+    return events
+
+
+def fetch_calendar_data():
+    texts = []
+    if net.session is None:
+        net.create_session()
+    for url in [item for item in CALENDAR_CONF.get('URLS', []) if item]:
+        try:
+            resp = net.session.get(url, timeout=15)
+            resp.raise_for_status()
+            texts.append(resp.text)
+        except Exception as e:
+            logging.error(f"Calendar fetch error for {url}: {e}")
+
+    path = CALENDAR_CONF.get('PATH')
+    if path:
+        try:
+            with open(path, 'r', encoding='utf-8') as calendar_file:
+                texts.append(calendar_file.read())
+        except OSError as e:
+            logging.error(f"Calendar file error for {path}: {e}")
+
+    if not texts:
+        return {'error': True, 'events': [], 'message': 'No ICS source configured'}
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=int(CALENDAR_CONF.get('LOOKAHEAD_DAYS', 14)))
+    events = []
+    for text in texts:
+        for event in parse_ics_events(text):
+            start = event.get('start_dt')
+            if not start or start < now or start > horizon:
+                continue
+            events.append(event)
+
+    events.sort(key=lambda item: item.get('start_dt'))
+    max_events = int(CALENDAR_CONF.get('MAX_EVENTS', 3))
+    clean_events = []
+    for event in events[:max_events]:
+        clean_events.append({
+            'title': event.get('title') or 'Untitled event',
+            'start': event.get('start'),
+            'end': event.get('end'),
+            'all_day': bool(event.get('all_day')),
+            'location': event.get('location', '')
+        })
+
+    return {
+        'error': False,
+        'label': CALENDAR_CONF.get('LABEL', 'CALENDAR'),
+        'events': clean_events,
+        'last_success': current_utc_iso(),
+        'stale': False
+    }
+
+
+def fetch_homeassistant_data():
+    base_url = str(HOMEASSISTANT_CONF.get('BASE_URL', '')).rstrip('/')
+    token = HOMEASSISTANT_CONF.get('TOKEN', '')
+    entities = HOMEASSISTANT_CONF.get('ENTITIES', [])
+    if not base_url or not token or not entities:
+        return {'error': True, 'connected': False, 'entities': [], 'message': 'Home Assistant is not configured'}
+
+    headers = {'Authorization': f"Bearer {token}", 'Accept': 'application/json'}
+    output = []
+    failures = 0
+    for entity in entities[:6]:
+        entity_id = str(entity.get('entity_id', '')).strip()
+        if not entity_id:
+            continue
+        url = f"{base_url}/api/states/{urllib.parse.quote(entity_id, safe='')}"
+        data = net.get_json(url, headers=headers, timeout=8)
+        if not data:
+            failures += 1
+            continue
+        attrs = data.get('attributes', {}) if isinstance(data.get('attributes'), dict) else {}
+        output.append({
+            'entity_id': entity_id,
+            'label': entity.get('label') or attrs.get('friendly_name') or entity_id,
+            'state': str(data.get('state', 'unknown')),
+            'unit': entity.get('unit') or attrs.get('unit_of_measurement') or '',
+            'updated_at': data.get('last_updated')
+        })
+
+    return {
+        'error': failures > 0 and not output,
+        'connected': bool(output),
+        'entities': output,
+        'last_success': current_utc_iso() if output else None,
+        'stale': False,
+        'message': 'No entity data fetched' if not output else ''
+    }
+
+
+def github_headers():
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'epaper-dashboard/1.0'
+    }
+    token = GITHUB_CONF.get('TOKEN')
+    if token:
+        headers['Authorization'] = f"Bearer {token}"
+    return headers
+
+
+def fetch_github_data():
+    repos = [repo for repo in GITHUB_CONF.get('REPOSITORIES', []) if '/' in repo]
+    if not repos:
+        return {'error': True, 'repos': [], 'message': 'No GitHub repositories configured'}
+
+    headers = github_headers()
+    results = []
+    failures = 0
+    for repo in repos[:4]:
+        repo = repo.strip()
+        base = f"https://api.github.com/repos/{repo}"
+        pulls = net.get_json(f"{base}/pulls?state=open&per_page=100", headers=headers, timeout=10)
+        issues = net.get_json(f"{base}/issues?state=open&per_page=100", headers=headers, timeout=10)
+        runs = net.get_json(f"{base}/actions/runs?per_page=1", headers=headers, timeout=10)
+        if pulls is None and issues is None and runs is None:
+            failures += 1
+            continue
+
+        pull_items = pulls if isinstance(pulls, list) else []
+        issue_items = issues if isinstance(issues, list) else []
+        open_issues = [issue for issue in issue_items if 'pull_request' not in issue]
+        latest_run = (runs or {}).get('workflow_runs', [{}])[0] if isinstance(runs, dict) else {}
+        results.append({
+            'repo': repo,
+            'pulls': len(pull_items),
+            'issues': len(open_issues),
+            'workflow': latest_run.get('name') or 'workflow',
+            'workflow_status': latest_run.get('conclusion') or latest_run.get('status') or 'unknown',
+            'updated_at': latest_run.get('updated_at')
+        })
+
+    return {
+        'error': failures > 0 and not results,
+        'label': GITHUB_CONF.get('LABEL', 'GITHUB / DEVOPS'),
+        'repos': results,
+        'last_success': current_utc_iso() if results else None,
+        'stale': False,
+        'message': 'No GitHub data fetched' if not results else ''
+    }
+
 # --- GLOBAL DATA STORE ---
 class DataStore:
     def __init__(self):
@@ -261,6 +530,9 @@ class DataStore:
         }
         self.printer = {'status': 'OFFLINE'}
         self.gmail_unread = 0
+        self.calendar = {'error': False, 'events': []}
+        self.homeassistant = {'error': False, 'connected': False, 'entities': []}
+        self.github = {'error': False, 'repos': []}
         self.spotify = {'status': 'PAUSED', 'text': '', 'cover': None}
         self.claude = {'error': False, 'five_hour': {}, 'seven_day': {}}
         self.openai = {'error': False, 'window_24h': {}, 'window_7d': {}, 'models': []}
@@ -276,6 +548,7 @@ class DataStore:
         self.last_update = {
             'weather': 0, 'strava': 0, 'printer': 0, 'gmail': 0,
             'spotify': 0, 'crypto': 0, 'sysload': 0, 'ping': 0,
+            'calendar': 0, 'homeassistant': 0, 'github': 0,
             'claude': 0, 'openai': 0, 'antigravity': 0
         }
 
@@ -672,7 +945,7 @@ def update_data_thread():
     while True:
         now = time.time()
 
-        if now - data_store.last_update['weather'] > 600:
+        if now - data_store.last_update['weather'] > refresh_seconds('weather', 600):
             weather_url = f"{API_ENDPOINTS['weather']}?latitude={LOCATION_LAT}&longitude={LOCATION_LON}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,weather_code,is_day,uv_index&hourly=temperature_2m,precipitation_probability,weather_code,cloud_cover&timezone=auto&forecast_days=2"
             aqi_url = f"{API_ENDPOINTS['aqi']}?latitude={LOCATION_LAT}&longitude={LOCATION_LON}&current=european_aqi&timezone=auto"
             w_data = net.get_json(weather_url)
@@ -683,13 +956,13 @@ def update_data_thread():
             data_store.last_update['weather'] = now
 
         if ENABLE_STRAVA:
-            if now - data_store.last_update['strava'] > 900:
+            if now - data_store.last_update['strava'] > refresh_seconds('strava', 900):
                 s_data = fetch_strava_data()
                 if s_data:
                     with data_store.lock: data_store.strava = s_data
                 data_store.last_update['strava'] = now
         if (not ENABLE_STRAVA) or widget_slot_can_show('sysload'):
-            if now - data_store.last_update['sysload'] > 30:
+            if now - data_store.last_update['sysload'] > refresh_seconds('sysload', 30):
                 try:
                     with open('/proc/loadavg', 'r') as f:
                         cpu = float(f.read().split()[0]) * 10
@@ -705,7 +978,7 @@ def update_data_thread():
                 data_store.last_update['sysload'] = now
 
         if ENABLE_BAMBU:
-            update_interval = 5 if is_connected else 15
+            update_interval = 5 if is_connected else refresh_seconds('bambu', 15)
             if now - data_store.last_update['printer'] > update_interval:
                 is_alive = ping_printer(PRINTER_CONF['IP'])
                 if is_alive:
@@ -743,7 +1016,7 @@ def update_data_thread():
                         data_store.printer['status'] = 'OFFLINE'
                 data_store.last_update['printer'] = now
         if (not ENABLE_BAMBU) or widget_slot_can_show('crypto'):
-            if now - data_store.last_update['crypto'] > 600:
+            if now - data_store.last_update['crypto'] > refresh_seconds('crypto', 600):
                 btc_url = f"{API_ENDPOINTS['btc']}?vs_currency=usd&days=7"
                 eth_url = f"{API_ENDPOINTS['eth']}?vs_currency=usd&days=7"
                 btc_data = net.get_json(btc_url)
@@ -753,16 +1026,16 @@ def update_data_thread():
                         prices = [p[1] for p in btc_data.get('prices', [])]
                         if prices:
                             data_store.crypto['btc'] = int(prices[-1])
-                            data_store.crypto['btc_hist'] = prices[::len(prices) // 50][:50]
+                            data_store.crypto['btc_hist'] = prices[::max(1, len(prices) // 50)][:50]
                     if eth_data:
                         prices = [p[1] for p in eth_data.get('prices', [])]
                         if prices:
                             data_store.crypto['eth'] = int(prices[-1])
-                            data_store.crypto['eth_hist'] = prices[::len(prices) // 50][:50]
+                            data_store.crypto['eth_hist'] = prices[::max(1, len(prices) // 50)][:50]
                 data_store.last_update['crypto'] = now
 
         if (not ENABLE_ROBOROCK and not ENABLE_ANTIGRAVITY) or widget_slot_can_show('ping'):
-            if now - data_store.last_update['ping'] > 20:
+            if now - data_store.last_update['ping'] > refresh_seconds('ping', 20):
                 try:
                     out = subprocess.check_output(['ping', '-c', '1', '-W', '1', '8.8.8.8']).decode('utf-8')
                     ms = float(out.split('time=')[1].split(' ms')[0])
@@ -773,7 +1046,7 @@ def update_data_thread():
                     data_store.ping['history'].append(int(ms))
                 data_store.last_update['ping'] = now
 
-        if now - data_store.last_update['gmail'] > 300:
+        if now - data_store.last_update['gmail'] > refresh_seconds('gmail', 300):
             try:
                 creds = None
                 if os.path.exists(GMAIL_TOKEN_PATH):
@@ -789,8 +1062,52 @@ def update_data_thread():
                 pass
             data_store.last_update['gmail'] = now
 
+        if ENABLE_CALENDAR and now - data_store.last_update['calendar'] > refresh_seconds('calendar', 900):
+            try:
+                calendar_data = fetch_calendar_data()
+                with data_store.lock:
+                    if calendar_data.get('error') and data_store.calendar.get('events'):
+                        data_store.calendar['stale'] = True
+                        data_store.calendar['error'] = False
+                    else:
+                        data_store.calendar = calendar_data
+            except Exception as e:
+                logging.error(f"Calendar update error: {e}")
+                with data_store.lock:
+                    data_store.calendar['error'] = True
+            data_store.last_update['calendar'] = now
+
+        if ENABLE_HOMEASSISTANT and now - data_store.last_update['homeassistant'] > refresh_seconds('homeassistant', 60):
+            try:
+                ha_data = fetch_homeassistant_data()
+                with data_store.lock:
+                    if ha_data.get('error') and data_store.homeassistant.get('entities'):
+                        data_store.homeassistant['stale'] = True
+                        data_store.homeassistant['error'] = False
+                    else:
+                        data_store.homeassistant = ha_data
+            except Exception as e:
+                logging.error(f"Home Assistant update error: {e}")
+                with data_store.lock:
+                    data_store.homeassistant['error'] = True
+            data_store.last_update['homeassistant'] = now
+
+        if ENABLE_GITHUB and now - data_store.last_update['github'] > refresh_seconds('github', 300):
+            try:
+                github_data = fetch_github_data()
+                with data_store.lock:
+                    if github_data.get('error') and data_store.github.get('repos'):
+                        data_store.github['stale'] = True
+                        data_store.github['error'] = False
+                    else:
+                        data_store.github = github_data
+            except Exception as e:
+                logging.error(f"GitHub update error: {e}")
+                with data_store.lock:
+                    data_store.github['error'] = True
+            data_store.last_update['github'] = now
         # Claude Data Fetching (Run external script every 10 min)
-        if ENABLE_CLAUDE and now - data_store.last_update['claude'] > 600:
+        if ENABLE_CLAUDE and now - data_store.last_update['claude'] > refresh_seconds('ai_usage', 600):
             try:
                 subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'claude.py')], capture_output=True, timeout=30)
                 usage_path = os.path.join(BASE_DIR, 'usage.json')
@@ -812,7 +1129,7 @@ def update_data_thread():
                     data_store.claude['error'] = True
             data_store.last_update['claude'] = now
 
-        if ENABLE_OPENAI and now - data_store.last_update['openai'] > 600:
+        if ENABLE_OPENAI and now - data_store.last_update['openai'] > refresh_seconds('ai_usage', 600):
             try:
                 subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'openai_codex.py')], capture_output=True, timeout=30)
                 openai_usage_path = os.path.join(BASE_DIR, 'openai_usage.json')
@@ -834,7 +1151,7 @@ def update_data_thread():
                     data_store.openai['error'] = True
             data_store.last_update['openai'] = now
 
-        if ENABLE_ANTIGRAVITY and now - data_store.last_update['antigravity'] > 60:
+        if ENABLE_ANTIGRAVITY and now - data_store.last_update['antigravity'] > refresh_seconds('antigravity', 60):
             try:
                 subprocess.run([sys.executable, os.path.join(BASE_DIR, 'dashboard', 'antigravity.py')], capture_output=True, timeout=30)
                 limits_path = os.path.join(BASE_DIR, 'limits.json')
@@ -856,7 +1173,7 @@ def update_data_thread():
                     data_store.antigravity['error'] = True
             data_store.last_update['antigravity'] = now
 
-        if ENABLE_SPOTIFY and now - data_store.last_update['spotify'] > 20:
+        if ENABLE_SPOTIFY and now - data_store.last_update['spotify'] > refresh_seconds('spotify', 20):
             url = f"{API_ENDPOINTS['lastfm']}?method=user.getrecenttracks&user={LASTFM_CONF['USERNAME']}&api_key={LASTFM_CONF['API_KEY']}&format=json&limit=2&rnd={int(now)}"
             s_data = net.get_json(url, timeout=5)
             if s_data:
@@ -959,6 +1276,9 @@ def snapshot_data_store():
             'printer': data_store.printer.copy(),
             'roborock': data_store.roborock.copy(),
             'gmail_unread': data_store.gmail_unread,
+            'calendar': data_store.calendar.copy(),
+            'homeassistant': data_store.homeassistant.copy(),
+            'github': data_store.github.copy(),
             'spotify': data_store.spotify.copy(),
             'claude': data_store.claude.copy(),
             'openai': data_store.openai.copy(),
@@ -985,6 +1305,12 @@ def is_widget_available(widget_id):
         return ENABLE_CLAUDE or ENABLE_OPENAI
     if widget_id == 'spotify':
         return ENABLE_SPOTIFY
+    if widget_id == 'calendar':
+        return ENABLE_CALENDAR
+    if widget_id == 'homeassistant':
+        return ENABLE_HOMEASSISTANT
+    if widget_id == 'github':
+        return ENABLE_GITHUB
     return widget_id in ('sysload', 'crypto', 'ping', 'time_progress')
 
 
@@ -1009,19 +1335,7 @@ def choose_slot_widget(slot_name, now_ts=None):
 
 
 def get_widget_slot_rects(epd):
-    col_w = epd.width // 3
-    col1_x = 20
-    col2_x = col_w + 20
-    col3_x = col_w * 2 + 30
-    return {
-        'left_top': (col1_x, 20, col_w - 20, 145),
-        'left_middle': (col1_x, 170, col_w - 20, 315),
-        'left_bottom': (col1_x, 340, col_w - 20, 470),
-        'weather': (col2_x, 10, col_w * 2 - 20, 470),
-        'clock': (col3_x, 10, epd.width - 20, 220),
-        'right_middle': (col3_x, 240, epd.width - 20, 370),
-        'gmail': (col3_x, 400, epd.width - 20, 470)
-    }
+    return dashboard_registry.runtime_region_rects(epd.width, epd.height, SCREEN_REGIONS)
 
 
 def render_screen(epd, fonts):
@@ -1045,26 +1359,26 @@ def render_screen(epd, fonts):
         OPENAI_CONF, ENABLE_CLAUDE, ENABLE_OPENAI
     )
 
-    dashboard_widgets.draw_slot(choose_slot_widget('left_top', now_ts), Himage, draw, fonts, state, col1_x, 20, clear_rect=slot_rects['left_top'])
+    dashboard_widgets.draw_slot(choose_slot_widget('left_top', now_ts), Himage, draw, fonts, state, slot_rects['left_top'][0], slot_rects['left_top'][1], clear_rect=slot_rects['left_top'])
     draw.line((col1_x, 150, col_w - 20, 150), fill=0, width=2)
 
-    dashboard_widgets.draw_slot(choose_slot_widget('left_middle', now_ts), Himage, draw, fonts, state, col1_x, 170, clear_rect=slot_rects['left_middle'])
+    dashboard_widgets.draw_slot(choose_slot_widget('left_middle', now_ts), Himage, draw, fonts, state, slot_rects['left_middle'][0], slot_rects['left_middle'][1], clear_rect=slot_rects['left_middle'])
     draw.line((col1_x, 320, col_w - 20, 320), fill=0, width=2)
 
-    dashboard_widgets.draw_slot(choose_slot_widget('left_bottom', now_ts), Himage, draw, fonts, state, col1_x, 340, clear_rect=slot_rects['left_bottom'])
+    dashboard_widgets.draw_slot(choose_slot_widget('left_bottom', now_ts), Himage, draw, fonts, state, slot_rects['left_bottom'][0], slot_rects['left_bottom'][1], clear_rect=slot_rects['left_bottom'])
     draw.line((col_w, 10, col_w, 470), fill=0, width=2)
 
-    dashboard_widgets.draw_weather_panel(draw, fonts, state, col2_x, col_w)
+    dashboard_widgets.draw_weather_panel(draw, fonts, state, slot_rects['weather'][0], col_w)
     draw.line((col_w * 2, 10, col_w * 2, 470), fill=0, width=2)
 
-    dashboard_widgets.draw_time_header(draw, fonts, state, col3_x)
+    dashboard_widgets.draw_time_header(draw, fonts, state, slot_rects['clock'][0])
     draw.line((col3_x, 220, epd.width - 20, 220), fill=0, width=2)
 
-    dashboard_widgets.draw_slot(choose_slot_widget('right_middle', now_ts), Himage, draw, fonts, state, col3_x, 240,
+    dashboard_widgets.draw_slot(choose_slot_widget('right_middle', now_ts), Himage, draw, fonts, state, slot_rects['right_middle'][0], slot_rects['right_middle'][1],
                                 clear_rect=slot_rects['right_middle'])
     draw.line((col3_x, 380, epd.width - 20, 380), fill=0, width=2)
 
-    dashboard_widgets.draw_gmail_widget(draw, fonts, state, col3_x, 400)
+    dashboard_widgets.draw_gmail_widget(draw, fonts, state, slot_rects['gmail'][0], slot_rects['gmail'][1])
 
     return Himage
 

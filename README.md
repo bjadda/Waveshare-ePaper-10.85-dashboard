@@ -26,8 +26,8 @@
 
 - Runs on a Raspberry Pi Zero 2W with the Waveshare 10.85-inch e-paper panel.
 - Uses a patched local driver for safer rectangular partial refreshes.
-- Lets you choose widgets and slot rotation through a local web configurator.
-- Shows home, device, weather, usage, network, and productivity widgets.
+- Lets you choose profiles, widgets, named regions, and slot rotation through a local web configurator.
+- Shows home, device, weather, usage, network, calendar, Home Assistant, GitHub, and productivity widgets.
 - Keeps secrets local in ignored runtime files.
 - Falls back to logs when a widget, API, or hardware refresh misbehaves.
 
@@ -61,7 +61,7 @@ cd ~/dashboard
 python3 config_server.py --host 0.0.0.0 --port 8080
 ```
 
-Open `http://<pi-ip>:8080` from a browser on the same trusted network. The configurator writes `dashboard_config.json`.
+Open `http://<pi-ip>:8080` from a browser on the same trusted network. The configurator writes `dashboard_config.json`, including dashboard profiles and per-region widget choices.
 
 Restart after saving:
 
@@ -69,7 +69,7 @@ Restart after saving:
 sudo systemctl restart epaper-dashboard
 ```
 
-Manual config starts from `config/dashboard_config.example.json`. Detailed widget setup lives in [docs/WIDGETS.md](docs/WIDGETS.md), and visual asset guidance lives in [docs/ASSETS.md](docs/ASSETS.md).
+Manual config starts from `config/dashboard_config.example.json`. Profiles define complete dashboard views, and each named region only offers widgets that fit its shape. Detailed widget setup lives in [docs/WIDGETS.md](docs/WIDGETS.md), and visual asset guidance lives in [docs/ASSETS.md](docs/ASSETS.md).
 
 ## Run And Debug
 
@@ -87,6 +87,7 @@ When in doubt, fall back to logs:
 - `~/dashboard/dashboard.log` for the main render loop.
 - `~/dashboard/claude_monitor.log`, `~/dashboard/openai_monitor.log`, and `~/dashboard/limits.log` for usage widgets.
 - Run `python3 main.py` in the foreground when an OAuth flow or first-run prompt needs attention.
+- Use the configurator **Debug bundle** button for a redacted zip of config shape, file status, and recent logs.
 
 ## Dashboard Ideas
 

@@ -12,8 +12,8 @@ This file records project ownership and the main changes in this repo. It is att
 - Modular widget rendering in `dashboard/dashboard_widgets.py`.
 - JSON-backed runtime configuration in `dashboard_config.json`.
 - Accessible local web configurator in `config_server.py`.
-- Dynamic widget slots with priority fallback or timed rotation per screen region.
-- OpenAI/Codex, Claude Code, Antigravity, Strava, Bambu Lab, Roborock, Spotify/Last.fm, Gmail, weather, system load, crypto, and network widgets.
+- Dashboard profiles, named screen regions, widget fit rules, and dynamic slots with priority fallback or timed rotation.
+- OpenAI/Codex, Claude Code, Antigravity, Strava, Bambu Lab, Roborock, Spotify/Last.fm, Gmail, weather, calendar, Home Assistant, GitHub/DevOps, system load, crypto, and network widgets.
 
 ## Maintenance Notes
 

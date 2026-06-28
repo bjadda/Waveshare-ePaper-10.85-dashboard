@@ -1,82 +1,81 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 import argparse
+import io
 import json
 import os
+import platform
+import re
 import subprocess
+import sys
+import time
 import urllib.parse
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from dashboard import dashboard_config, dashboard_defaults
+from dashboard import dashboard_config, dashboard_defaults, dashboard_registry
 
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULTS = dashboard_defaults.dashboard_config_defaults()
 
-WIDGET_META = [
-    {
-        'id': 'strava',
-        'label': 'Strava',
-        'description': 'Activity totals and recent training stats.',
-        'icon': 'activity'
-    },
-    {
-        'id': 'bambu',
-        'label': 'Bambu Lab',
-        'description': '3D printer status, progress, and layer details.',
-        'icon': 'printer'
-    },
-    {
-        'id': 'roborock',
-        'label': 'Roborock',
-        'description': 'Vacuum status, battery, and cleaning area.',
-        'icon': 'vacuum'
-    },
-    {
-        'id': 'antigravity',
-        'label': 'Antigravity',
-        'description': 'Antigravity usage limits and reset time.',
-        'icon': 'code'
-    },
-    {
-        'id': 'claude',
-        'label': 'Claude Code',
-        'description': 'Claude Code usage windows and remaining quota.',
-        'icon': 'gauge'
-    },
-    {
-        'id': 'openai',
-        'label': 'OpenAI / Codex',
-        'description': 'Codex usage and rate-limit status.',
-        'icon': 'gauge'
-    },
-    {
-        'id': 'spotify',
-        'label': 'Spotify',
-        'description': 'Now playing data via Last.fm.',
-        'icon': 'music'
+LOG_SOURCES = {
+    'dashboard': 'dashboard.log',
+    'claude': os.path.join('dashboard', 'claude_monitor.log'),
+    'openai': os.path.join('dashboard', 'openai_monitor.log'),
+    'limits': 'limits.log',
+}
+
+DEBUG_FILES = {
+    'dashboard_config.json': 'dashboard_config.json',
+    'dashboard.log': 'dashboard.log',
+    'dashboard.log.1': 'dashboard.log.1',
+    'claude_monitor.log': os.path.join('dashboard', 'claude_monitor.log'),
+    'openai_monitor.log': os.path.join('dashboard', 'openai_monitor.log'),
+    'limits.log': 'limits.log',
+    'usage.json': 'usage.json',
+    'openai_usage.json': 'openai_usage.json',
+    'limits.json': 'limits.json',
+    'roborock_stats.json': 'roborock_stats.json',
+}
+
+SECRET_KEY_RE = re.compile(r'(token|secret|password|access_code|api[_-]?key|authorization|cookie|credential|client_secret)', re.I)
+BEARER_RE = re.compile(r'(?i)(bearer\s+)[a-z0-9._~+/=-]+')
+SECRET_ASSIGN_RE = re.compile(r"(?i)(token|secret|password|access_code|api[_-]?key|authorization|cookie|credential|client_secret)([\"']?\s*[:=]\s*[\"']?)[^\"'\s,}]+")
+
+def _widget_meta(widget_id, widget):
+    return {
+        'id': widget_id,
+        'label': widget.get('label', widget_id),
+        'description': widget.get('description', ''),
+        'icon': widget.get('icon', 'grid'),
+        'supports': list(widget.get('supports', ())),
+        'refreshSeconds': int(widget.get('refresh_seconds', 300)),
     }
+
+
+WIDGET_META = [
+    _widget_meta(widget_id, widget)
+    for widget_id, widget in dashboard_registry.WIDGET_REGISTRY.items()
+    if widget.get('toggle') == widget_id
 ]
 
+_DYNAMIC_REGION_TYPES = {
+    region.get('type')
+    for region in dashboard_registry.DEFAULT_REGIONS.values()
+    if region.get('dynamic')
+}
+
 SLOT_WIDGET_META = [
-    {'id': 'strava', 'label': 'Strava', 'icon': 'activity'},
-    {'id': 'sysload', 'label': 'System load', 'icon': 'cpu'},
-    {'id': 'bambu', 'label': 'Bambu Lab', 'icon': 'printer'},
-    {'id': 'crypto', 'label': 'Crypto prices', 'icon': 'coins'},
-    {'id': 'roborock', 'label': 'Roborock', 'icon': 'vacuum'},
-    {'id': 'antigravity', 'label': 'Antigravity', 'icon': 'code'},
-    {'id': 'ping', 'label': 'Network ping', 'icon': 'wifi'},
-    {'id': 'ai_usage', 'label': 'AI usage', 'icon': 'gauge'},
-    {'id': 'spotify', 'label': 'Spotify', 'icon': 'music'},
-    {'id': 'time_progress', 'label': 'Time progress', 'icon': 'clock'}
+    _widget_meta(widget_id, widget)
+    for widget_id, widget in dashboard_registry.WIDGET_REGISTRY.items()
+    if _DYNAMIC_REGION_TYPES.intersection(set(widget.get('supports', ())))
 ]
 
 SLOT_META = [
-    {'id': 'left_top', 'label': 'Left top', 'description': 'Upper-left widget region.'},
-    {'id': 'left_middle', 'label': 'Left middle', 'description': 'Center-left widget region.'},
-    {'id': 'left_bottom', 'label': 'Left bottom', 'description': 'Lower-left widget region.'},
-    {'id': 'right_middle', 'label': 'Right middle', 'description': 'Large right-side widget region.'}
+    dict({'id': region_id}, **region)
+    for region_id, region in dashboard_registry.DEFAULT_REGIONS.items()
+    if region.get('dynamic')
 ]
-
 HTML = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -97,6 +96,9 @@ HTML = r"""<!doctype html>
     <symbol id="icon-coins" viewBox="0 0 24 24"><ellipse cx="9" cy="6" rx="6" ry="3"/><path d="M3 6v6c0 1.7 2.7 3 6 3s6-1.3 6-3V6"/><path d="M15 10c3.4.2 6 1.4 6 3s-2.7 3-6 3c-1.2 0-2.4-.2-3.3-.5"/><path d="M21 13v5c0 1.7-2.7 3-6 3-2.3 0-4.3-.6-5.3-1.5"/></symbol>
     <symbol id="icon-wifi" viewBox="0 0 24 24"><path d="M5 13a10 10 0 0 1 14 0"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M12 20h.01"/></symbol>
     <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+    <symbol id="icon-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
     <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></symbol>
     <symbol id="icon-save" viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/></symbol>
     <symbol id="icon-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
@@ -151,6 +153,10 @@ HTML = r"""<!doctype html>
             <svg aria-hidden="true"><use href="#icon-rotate"></use></svg>
             Restart dashboard
           </button>
+          <button id="debugBundleButton" class="secondary-button" type="button">
+            <svg aria-hidden="true"><use href="#icon-terminal"></use></svg>
+            Debug bundle
+          </button>
         </div>
       </aside>
 
@@ -159,6 +165,14 @@ HTML = r"""<!doctype html>
           <div>
             <p class="eyebrow">Runtime settings</p>
             <h2 id="settingsTitle">Compose the dashboard</h2>
+          </div>
+          <div class="profile-toolbar" aria-label="Dashboard profile controls">
+            <label class="profile-select" for="profileSelect">
+              <span>Profile</span>
+              <select id="profileSelect"></select>
+            </label>
+            <button id="duplicateProfileButton" class="secondary-button" type="button">Duplicate</button>
+            <button id="deleteProfileButton" class="secondary-button" type="button">Delete</button>
           </div>
           <div class="action-row">
             <button id="resetButton" class="secondary-button" type="button">Reset defaults</button>
@@ -255,6 +269,40 @@ HTML = r"""<!doctype html>
               <label class="field"><span>Widget label</span><input id="openaiLabel" autocomplete="off"></label>
               <label class="field"><span>Project IDs</span><textarea id="openaiProjectIds" rows="3" spellcheck="false"></textarea></label>
               <label class="field"><span>Model filters</span><textarea id="openaiModelFilters" rows="3" spellcheck="false"></textarea></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Calendar</legend>
+              <label class="field"><span>Label</span><input id="calendarLabel" autocomplete="off"></label>
+              <label class="field"><span>ICS URLs</span><textarea id="calendarUrls" rows="3" spellcheck="false"></textarea></label>
+              <label class="field"><span>Local ICS path</span><input id="calendarPath" autocomplete="off"></label>
+              <label class="field"><span>Max events</span><input id="calendarMaxEvents" type="number" min="1" max="10" step="1"></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Home Assistant</legend>
+              <label class="field"><span>Base URL</span><input id="haBaseUrl" placeholder="http://homeassistant.local:8123" autocomplete="off"></label>
+              <label class="field secret-field">
+                <span>Long-lived token</span>
+                <span class="secret-control">
+                  <input id="haToken" type="password" autocomplete="off">
+                  <button class="icon-button reveal-button" type="button" data-target="haToken" aria-label="Show Home Assistant token" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
+                </span>
+              </label>
+              <label class="field"><span>Entities</span><textarea id="haEntities" rows="4" spellcheck="false" placeholder="sensor.office_temp | Office | C"></textarea></label>
+            </fieldset>
+
+            <fieldset>
+              <legend>GitHub / DevOps</legend>
+              <label class="field"><span>Widget label</span><input id="githubLabel" autocomplete="off"></label>
+              <label class="field secret-field">
+                <span>Token</span>
+                <span class="secret-control">
+                  <input id="githubToken" type="password" autocomplete="off">
+                  <button class="icon-button reveal-button" type="button" data-target="githubToken" aria-label="Show GitHub token" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
+                </span>
+              </label>
+              <label class="field"><span>Repositories</span><textarea id="githubRepositories" rows="3" spellcheck="false" placeholder="owner/repo"></textarea></label>
             </fieldset>
           </div>
         </section>
@@ -672,6 +720,25 @@ h3 {
   gap: 8px;
 }
 
+.profile-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.profile-select {
+  display: grid;
+  gap: 5px;
+  min-width: 180px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.profile-select select {
+  min-height: 40px;
+}
 .primary-button,
 .secondary-button,
 .icon-button {
@@ -946,6 +1013,7 @@ textarea {
   .github-actions,
   .status-stack,
   .action-row,
+  .profile-toolbar,
   .preview-footer {
     align-items: stretch;
     width: 100%;
@@ -1024,6 +1092,31 @@ function listToText(values) {
   return Array.isArray(values) ? values.join("\n") : "";
 }
 
+
+function entitiesToText(values) {
+  return Array.isArray(values) ? values.map((entity) => {
+    if (typeof entity === "string") return entity;
+    return [entity.entity_id || entity.topic || "", entity.label || "", entity.unit || ""]
+      .filter(Boolean)
+      .join(" | ");
+  }).join("\n") : "";
+}
+
+function textToEntities(value) {
+  return String(value || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      return {
+        entity_id: parts[0] || "",
+        label: parts[1] || parts[0] || "",
+        unit: parts[2] || ""
+      };
+    })
+    .filter((entity) => entity.entity_id);
+}
 function textToList(value) {
   return String(value || "")
     .split(/\n|,/)
@@ -1072,6 +1165,11 @@ function ensureConfigShape() {
   state.config.integrations.roborock ||= {};
   state.config.integrations.lastfm ||= {};
   state.config.integrations.openai ||= {};
+  state.config.integrations.calendar ||= {};
+  state.config.integrations.homeassistant ||= {};
+  state.config.integrations.github ||= {};
+  state.config.profiles ||= clone(state.defaults?.profiles || {});
+  state.config.active_profile ||= state.defaults?.active_profile || Object.keys(state.config.profiles)[0] || "home";
   state.config.slots ||= {};
 
   for (const slot of state.meta.slots) {
@@ -1080,6 +1178,38 @@ function ensureConfigShape() {
   }
 }
 
+function activeProfile() {
+  ensureConfigShape();
+  if (!state.config.profiles[state.config.active_profile]) {
+    const first = Object.keys(state.config.profiles)[0] || "home";
+    state.config.active_profile = first;
+  }
+  return state.config.profiles[state.config.active_profile];
+}
+
+function syncActiveProfileMirror() {
+  const profile = activeProfile();
+  profile.slots ||= {};
+  profile.slots = clone(state.config.slots || {});
+}
+
+function loadActiveProfileSlots() {
+  const profile = activeProfile();
+  profile.slots ||= {};
+  state.config.slots = clone(profile.slots);
+  for (const slot of state.meta.slots) {
+    state.config.slots[slot.id] ||= { widgets: [], rotate: false, seconds: 300 };
+    state.config.slots[slot.id].widgets ||= [];
+  }
+}
+
+function renderProfiles() {
+  const entries = Object.entries(state.config.profiles || {});
+  els.profileSelect.innerHTML = entries.map(([id, profile]) =>
+    `<option value="${escapeHtml(id)}" ${id === state.config.active_profile ? "selected" : ""}>${escapeHtml(profile.label || id)}</option>`
+  ).join("");
+  els.deleteProfileButton.disabled = entries.length <= 1;
+}
 function renderWidgets() {
   els.widgetToggles.innerHTML = state.meta.widgets.map((widget) => {
     const checked = state.config.widgets[widget.id] ? "checked" : "";
@@ -1147,7 +1277,7 @@ function renderSlots() {
     }).join("");
 
     const available = state.meta.slotWidgets
-      .filter((widget) => !selected.includes(widget.id))
+      .filter((widget) => !selected.includes(widget.id) && (!slot.type || (widget.supports || []).includes(slot.type)))
       .map((widget) => `<option value="${escapeHtml(widget.id)}">${escapeHtml(widget.label)}</option>`)
       .join("");
 
@@ -1198,16 +1328,26 @@ function renderFields() {
   els.openaiLabel.value = state.config.integrations.openai.label ?? "OPENAI / CODEX";
   els.openaiProjectIds.value = listToText(state.config.integrations.openai.project_ids);
   els.openaiModelFilters.value = listToText(state.config.integrations.openai.model_filters);
+  els.calendarLabel.value = state.config.integrations.calendar.label ?? "CALENDAR";
+  els.calendarUrls.value = listToText(state.config.integrations.calendar.urls);
+  els.calendarPath.value = state.config.integrations.calendar.path ?? "";
+  els.calendarMaxEvents.value = state.config.integrations.calendar.max_events ?? 3;
+  els.haBaseUrl.value = state.config.integrations.homeassistant.base_url ?? "";
+  els.haToken.value = state.config.integrations.homeassistant.token ?? "";
+  els.haEntities.value = entitiesToText(state.config.integrations.homeassistant.entities);
+  els.githubLabel.value = state.config.integrations.github.label ?? "GITHUB / DEVOPS";
+  els.githubToken.value = state.config.integrations.github.token ?? "";
+  els.githubRepositories.value = listToText(state.config.integrations.github.repositories);
 }
 
 function renderAll() {
   ensureConfigShape();
+  renderProfiles();
   renderWidgets();
   renderSlots();
   renderPreview();
   renderFields();
 }
-
 function updateConfigFromFields() {
   state.config.location.lat = Number(els.locationLat.value);
   state.config.location.lon = Number(els.locationLon.value);
@@ -1220,6 +1360,16 @@ function updateConfigFromFields() {
   state.config.integrations.openai.label = els.openaiLabel.value.trim() || "OPENAI / CODEX";
   state.config.integrations.openai.project_ids = textToList(els.openaiProjectIds.value);
   state.config.integrations.openai.model_filters = textToList(els.openaiModelFilters.value);
+  state.config.integrations.calendar.label = els.calendarLabel.value.trim() || "CALENDAR";
+  state.config.integrations.calendar.urls = textToList(els.calendarUrls.value);
+  state.config.integrations.calendar.path = els.calendarPath.value.trim();
+  state.config.integrations.calendar.max_events = Number(els.calendarMaxEvents.value || 3);
+  state.config.integrations.homeassistant.base_url = els.haBaseUrl.value.trim();
+  state.config.integrations.homeassistant.token = els.haToken.value.trim();
+  state.config.integrations.homeassistant.entities = textToEntities(els.haEntities.value);
+  state.config.integrations.github.label = els.githubLabel.value.trim() || "GITHUB / DEVOPS";
+  state.config.integrations.github.token = els.githubToken.value.trim();
+  state.config.integrations.github.repositories = textToList(els.githubRepositories.value);
 }
 
 async function loadConfig() {
@@ -1232,6 +1382,7 @@ async function loadConfig() {
   els.configPath.textContent = payload.path;
   els.restartButton.disabled = !payload.meta.canRestart;
   els.restartButton.title = payload.meta.canRestart ? "Restart the systemd dashboard service" : "Start this server with --allow-restart to enable service restarts";
+  loadActiveProfileSlots();
   renderAll();
   setDirty(false);
   setStatus("Config loaded", "is-saved");
@@ -1240,6 +1391,7 @@ async function loadConfig() {
 async function saveConfig(event) {
   event.preventDefault();
   updateConfigFromFields();
+  syncActiveProfileMirror();
   setStatus("Saving...", "");
   els.saveButton.disabled = true;
   const response = await fetch("/api/config", {
@@ -1256,6 +1408,28 @@ async function saveConfig(event) {
   renderAll();
   setDirty(false);
   setStatus("Saved", "is-saved");
+}
+
+async function downloadDebugBundle() {
+  setStatus("Building debug bundle...", "");
+  const response = await fetch("/api/debug-bundle", {
+    method: "POST",
+    headers: { "Accept": "application/zip" }
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Debug bundle failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "epaper-dashboard-debug.zip";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus("Debug bundle downloaded", "is-saved");
 }
 
 async function restartDashboard() {
@@ -1276,6 +1450,7 @@ function moveSlotItem(slotId, index, direction) {
   const nextIndex = index + direction;
   if (nextIndex < 0 || nextIndex >= widgets.length) return;
   [widgets[index], widgets[nextIndex]] = [widgets[nextIndex], widgets[index]];
+  syncActiveProfileMirror();
   renderSlots();
   renderPreview();
   setDirty();
@@ -1283,6 +1458,7 @@ function moveSlotItem(slotId, index, direction) {
 
 function removeSlotItem(slotId, index) {
   state.config.slots[slotId].widgets.splice(index, 1);
+  syncActiveProfileMirror();
   renderSlots();
   renderPreview();
   setDirty();
@@ -1292,6 +1468,7 @@ function addSlotItem(slotId) {
   const select = document.getElementById(`${slotId}-add`);
   if (!select || !select.value) return;
   state.config.slots[slotId].widgets.push(select.value);
+  syncActiveProfileMirror();
   renderSlots();
   renderPreview();
   setDirty();
@@ -1317,11 +1494,13 @@ function handleSlotInput(event) {
 
   if (target.dataset.action === "rotate") {
     state.config.slots[slotId].rotate = target.checked;
+    syncActiveProfileMirror();
     renderPreview();
     setDirty();
   }
   if (target.dataset.action === "seconds") {
     state.config.slots[slotId].seconds = Number(target.value || 300);
+    syncActiveProfileMirror();
     renderPreview();
     setDirty();
   }
@@ -1355,12 +1534,53 @@ function bindEvents() {
 
   els.resetButton.addEventListener("click", () => {
     state.config = clone(state.defaults);
+    loadActiveProfileSlots();
     renderAll();
     setDirty();
   });
 
+
+  els.profileSelect.addEventListener("change", () => {
+    updateConfigFromFields();
+    syncActiveProfileMirror();
+    state.config.active_profile = els.profileSelect.value;
+    loadActiveProfileSlots();
+    renderAll();
+    setDirty();
+  });
+
+  els.duplicateProfileButton.addEventListener("click", () => {
+    updateConfigFromFields();
+    syncActiveProfileMirror();
+    const current = activeProfile();
+    const name = prompt("New profile name", `${current.label || state.config.active_profile} copy`);
+    if (!name) return;
+    const id = name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || `profile-${Date.now()}`;
+    state.config.profiles[id] = clone(current);
+    state.config.profiles[id].label = name.trim();
+    state.config.active_profile = id;
+    loadActiveProfileSlots();
+    renderAll();
+    setDirty();
+  });
+
+  els.deleteProfileButton.addEventListener("click", () => {
+    const ids = Object.keys(state.config.profiles || {});
+    if (ids.length <= 1) return;
+    const currentId = state.config.active_profile;
+    if (!confirm(`Delete profile "${activeProfile().label || currentId}"?`)) return;
+    delete state.config.profiles[currentId];
+    state.config.active_profile = Object.keys(state.config.profiles)[0];
+    loadActiveProfileSlots();
+    renderAll();
+    setDirty();
+  });
   els.restartButton.addEventListener("click", () => {
     restartDashboard().catch((error) => setStatus(error.message, "is-error"));
+  });
+
+  els.debugBundleButton.addEventListener("click", () => {
+    downloadDebugBundle().catch((error) => setStatus(error.message, "is-error"));
   });
 
   document.addEventListener("click", (event) => {
@@ -1377,11 +1597,12 @@ function bindEvents() {
 
 function cacheElements() {
   for (const id of [
-    "saveStatus", "configPath", "screenPreview", "restartButton", "settings",
-    "resetButton", "saveButton", "widgetToggles", "slotEditors",
+    "saveStatus", "configPath", "screenPreview", "restartButton", "debugBundleButton", "settings",
+    "resetButton", "saveButton", "profileSelect", "duplicateProfileButton", "deleteProfileButton", "widgetToggles", "slotEditors",
     "locationLat", "locationLon", "bambuIp", "bambuSerial", "bambuAccessCode",
     "roborockEmail", "lastfmApiKey", "lastfmUsername", "openaiLabel",
-    "openaiProjectIds", "openaiModelFilters"
+    "openaiProjectIds", "openaiModelFilters", "calendarLabel", "calendarUrls", "calendarPath", "calendarMaxEvents",
+    "haBaseUrl", "haToken", "haEntities", "githubLabel", "githubToken", "githubRepositories"
   ]) {
     els[id] = document.getElementById(id);
   }
@@ -1413,11 +1634,116 @@ def text_response(handler, status, content_type, text):
     handler.wfile.write(body)
 
 
+def binary_response(handler, status, content_type, body, filename=None):
+    handler.send_response(status)
+    handler.send_header('Content-Type', content_type)
+    handler.send_header('Content-Length', str(len(body)))
+    handler.send_header('Cache-Control', 'no-store')
+    if filename:
+        handler.send_header('Content-Disposition', 'attachment; filename="%s"' % filename)
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def utc_now():
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+
+def safe_repo_path(relative_path):
+    path = os.path.realpath(os.path.join(BASE_DIR, relative_path))
+    base = os.path.realpath(BASE_DIR)
+    if path != base and not path.startswith(base + os.sep):
+        raise ValueError('Path escapes repository')
+    return path
+
+
+def redact_json(value, key=''):
+    if SECRET_KEY_RE.search(str(key)):
+        return '[redacted]'
+    if isinstance(value, dict):
+        return {item_key: redact_json(item_value, item_key) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [redact_json(item, key) for item in value]
+    return value
+
+
+def redact_text(text):
+    text = BEARER_RE.sub(r'\1[redacted]', text)
+    return SECRET_ASSIGN_RE.sub(lambda match: '%s%s[redacted]' % (match.group(1), match.group(2)), text)
+
+
+def file_status(relative_path):
+    path = safe_repo_path(relative_path)
+    if not os.path.exists(path):
+        return {'exists': False}
+    stat = os.stat(path)
+    return {
+        'exists': True,
+        'size': stat.st_size,
+        'modified_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(stat.st_mtime)),
+    }
+
+
+def tail_file(relative_path, lines=200, max_bytes=200000):
+    path = safe_repo_path(relative_path)
+    if not os.path.exists(path):
+        return ''
+    with open(path, 'rb') as log_file:
+        log_file.seek(0, os.SEEK_END)
+        size = log_file.tell()
+        log_file.seek(max(0, size - max_bytes))
+        data = log_file.read().decode('utf-8', errors='replace')
+    return redact_text('\n'.join(data.splitlines()[-lines:]))
+
+
+def service_status():
+    status = {}
+    for name, args in {
+        'active': ['systemctl', 'is-active', 'epaper-dashboard'],
+        'enabled': ['systemctl', 'is-enabled', 'epaper-dashboard'],
+    }.items():
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+            status[name] = (result.stdout or result.stderr).strip() or 'unknown'
+        except (OSError, subprocess.TimeoutExpired):
+            status[name] = 'unavailable'
+    return status
+
+
+def collect_diagnostics():
+    config = dashboard_config.config_for_public_response(BASE_DIR, DEFAULTS)
+    return {
+        'generated_at': utc_now(),
+        'python': sys.version.split()[0],
+        'platform': platform.platform(),
+        'config_path': dashboard_config.config_path(BASE_DIR),
+        'active_profile': config.get('active_profile'),
+        'enabled_widgets': [key for key, enabled in config.get('widgets', {}).items() if enabled],
+        'service': service_status(),
+        'files': {name: file_status(relative_path) for name, relative_path in DEBUG_FILES.items()},
+        'registry': dashboard_registry.metadata(),
+        'config': redact_json(config),
+    }
+
+
+def build_debug_bundle():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
+        bundle.writestr('diagnostics.json', json.dumps(collect_diagnostics(), indent=2))
+        for name, relative_path in DEBUG_FILES.items():
+            if not os.path.exists(safe_repo_path(relative_path)):
+                continue
+            content = tail_file(relative_path, lines=1000, max_bytes=512000)
+            bundle.writestr(os.path.join('files', name + '.redacted.txt'), content)
+    return buffer.getvalue()
+
+
 def metadata(can_restart):
     return {
         'widgets': WIDGET_META,
         'slotWidgets': SLOT_WIDGET_META,
         'slots': SLOT_META,
+        'registry': dashboard_registry.metadata(),
         'canRestart': can_restart
     }
 
@@ -1445,6 +1771,18 @@ class ConfigHandler(BaseHTTPRequestHandler):
                 'meta': metadata(self.allow_restart),
                 'path': dashboard_config.config_path(BASE_DIR)
             })
+        if path == '/api/diagnostics':
+            return json_response(self, 200, collect_diagnostics())
+        if path == '/api/logs':
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            source = query.get('source', ['dashboard'])[0]
+            if source not in LOG_SOURCES:
+                return json_response(self, 404, {'error': 'Unknown log source'})
+            try:
+                lines = max(10, min(1000, int(query.get('lines', ['200'])[0])))
+            except ValueError:
+                lines = 200
+            return text_response(self, 200, 'text/plain; charset=utf-8', tail_file(LOG_SOURCES[source], lines=lines))
         return json_response(self, 404, {'error': 'Not found'})
 
     def do_POST(self):
@@ -1453,6 +1791,9 @@ class ConfigHandler(BaseHTTPRequestHandler):
             return self.save_config()
         if path == '/api/restart':
             return self.restart_dashboard()
+        if path == '/api/debug-bundle':
+            body = build_debug_bundle()
+            return binary_response(self, 200, 'application/zip', body, 'epaper-dashboard-debug.zip')
         return json_response(self, 404, {'error': 'Not found'})
 
     def read_json_body(self):

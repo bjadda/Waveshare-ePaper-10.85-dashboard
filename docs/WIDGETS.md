@@ -15,6 +15,12 @@ sudo systemctl restart epaper-dashboard
 
 Manual setup starts from `config/dashboard_config.example.json`.
 
+## Profiles And Fit Rules
+
+Profiles are complete dashboard views. The active profile owns the dynamic slot choices, while the top-level `slots` block mirrors that active profile for older tooling.
+
+Named regions carry a shape type such as `wide_card`, `large_panel`, `status_tile`, or `header`. Widgets declare which region types they support in `dashboard/dashboard_registry.py`, and the configurator filters the add-widget menus so a widget is not offered in a region it cannot fit.
+
 ## Dynamic Slots
 
 Each screen region has a slot in `dashboard_config.json`. A slot can use the first available widget as a priority fallback, or rotate through multiple widgets on a timer.
@@ -27,7 +33,7 @@ Each screen region has a slot in `dashboard_config.json`. A slot can use the fir
 }
 ```
 
-This rotates the right-middle region every five minutes while the rest of the screen stays stable.
+This rotates the right-middle region every five minutes while the rest of the screen stays stable. If a widget is disabled, the next available widget in that region becomes the fallback.
 
 ## AI Usage Widgets
 
@@ -59,6 +65,20 @@ Logs: `openai_monitor.log` and `openai_usage.json`.
 5. The token is saved to `antigravity_creds.json`.
 
 Logs: `limits.log` and `limits.json`.
+
+## Calendar, Home, And DevOps Widgets
+
+### Calendar
+
+The calendar widget reads one or more ICS URLs or a local ICS file. Configure it with the web UI, or set `integrations.calendar.urls`, `integrations.calendar.path`, and `integrations.calendar.max_events` manually.
+
+### Home Assistant
+
+Use a Home Assistant base URL, a long-lived access token, and a small list of entity IDs. Each entity line in the configurator can use `entity_id | label | unit`.
+
+### GitHub / DevOps
+
+Add repositories as `owner/repo`. A token is optional for public repositories but recommended to avoid low anonymous rate limits. The widget summarizes open PRs, non-PR issues, and the latest workflow status.
 
 ## Home And Device Widgets
 
@@ -119,4 +139,4 @@ journalctl -u epaper-dashboard -f
 tail -f ~/dashboard/dashboard.log
 ```
 
-If a widget shows fallback text on the display, check that widget's token or usage file first. If the display stops refreshing, restart the service and check whether the last log line mentions a full refresh, partial refresh, or hardware hang.
+If a widget shows fallback text on the display, check that widget's token or usage file first. The configurator can also download a redacted debug bundle with config shape, file status, and recent logs. If the display stops refreshing, restart the service and check whether the last log line mentions a full refresh, partial refresh, or hardware hang.

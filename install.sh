@@ -221,6 +221,8 @@ import json
 import os
 import pathlib
 
+from dashboard import dashboard_config, dashboard_defaults
+
 path = pathlib.Path(os.environ["CONFIG_FILE"])
 try:
     config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -233,12 +235,13 @@ def enabled(name):
 def value(name):
     return os.environ.get(name, "").strip()
 
-config["version"] = 1
+config["version"] = dashboard_config.CONFIG_VERSION
 config["location"] = {
     "lat": float(os.environ["GPS_LAT"]),
     "lon": float(os.environ["GPS_LON"])
 }
-config["widgets"] = {
+widgets = config.setdefault("widgets", {})
+widgets.update({
     "strava": enabled("ENABLE_STRAVA"),
     "bambu": enabled("ENABLE_BAMBU"),
     "roborock": enabled("ENABLE_ROBOROCK"),
@@ -246,7 +249,7 @@ config["widgets"] = {
     "claude": enabled("ENABLE_CLAUDE"),
     "openai": enabled("ENABLE_OPENAI"),
     "spotify": enabled("ENABLE_SPOTIFY")
-}
+})
 
 integrations = config.setdefault("integrations", {})
 bambu = integrations.setdefault("bambu", {})
@@ -269,9 +272,9 @@ openai.setdefault("label", "OPENAI / CODEX")
 openai.setdefault("project_ids", [])
 openai.setdefault("model_filters", ["gpt-5-codex", "gpt-5.3-codex", "codex-mini-latest"])
 
+config = dashboard_config.merge_config(config, dashboard_defaults.dashboard_config_defaults())
 path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 PY
-
 section "Installing systemd service"
 if [ ! -f "$SERVICE_TEMPLATE" ]; then
   error "Service template $SERVICE_TEMPLATE not found."

@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 import calendar
 import math
+from datetime import datetime
 
 OPENAI_CONF = {}
 ENABLE_CLAUDE = False
@@ -430,6 +431,98 @@ def draw_time_progress_widget(draw, fonts, state, x, y):
     draw_prog(110, "YEAR", year_pct)
 
 
+def format_event_time(value, all_day=False):
+    if not value:
+        return "TBD"
+    if all_day:
+        try:
+            return datetime.fromisoformat(value).strftime("%d %b")
+        except ValueError:
+            return "All day"
+    try:
+        return datetime.fromisoformat(value).strftime("%d %b %H:%M")
+    except ValueError:
+        return value[:16]
+
+
+def draw_calendar_widget(draw, fonts, state, x, y):
+    calendar_state = state.get('calendar', {})
+    draw_icon(draw, x, y, "icon_calendar", (50, 50))
+    label = calendar_state.get('label', 'CALENDAR')
+    suffix = " STALE" if calendar_state.get('stale') else ""
+    draw.text((x + 60, y), f"{label}{suffix}", font=fonts['28'], fill=0)
+
+    if calendar_state.get('error') and not calendar_state.get('events'):
+        draw.text((x + 60, y + 42), "Calendar unavailable", font=fonts['24'], fill=0)
+        draw.text((x + 60, y + 72), "Check ICS config and logs", font=fonts['20'], fill=0)
+        return
+
+    events = calendar_state.get('events', [])
+    if not events:
+        draw.text((x + 60, y + 42), "No upcoming events", font=fonts['24'], fill=0)
+        return
+
+    for idx, event in enumerate(events[:3]):
+        y_off = y + 38 + idx * 32
+        when = format_event_time(event.get('start'), event.get('all_day'))
+        title = str(event.get('title', 'Untitled'))[:28]
+        draw.text((x + 60, y_off), when, font=fonts['20'], fill=0)
+        draw.text((x + 190, y_off), title, font=fonts['20'], fill=0)
+
+
+def draw_homeassistant_widget(draw, fonts, state, x, y):
+    ha = state.get('homeassistant', {})
+    draw_icon(draw, x, y, "icon_home", (50, 50))
+    title = "HOME ASSISTANT"
+    if ha.get('stale'):
+        title += " STALE"
+    draw.text((x + 60, y), title, font=fonts['28'], fill=0)
+
+    if ha.get('error') and not ha.get('entities'):
+        draw.text((x + 60, y + 42), "Home data unavailable", font=fonts['24'], fill=0)
+        draw.text((x + 60, y + 72), "Check URL, token, entities", font=fonts['20'], fill=0)
+        return
+
+    entities = ha.get('entities', [])
+    if not entities:
+        draw.text((x + 60, y + 42), "No entities configured", font=fonts['24'], fill=0)
+        return
+
+    for idx, entity in enumerate(entities[:3]):
+        y_off = y + 40 + idx * 30
+        label = str(entity.get('label') or entity.get('entity_id') or 'Entity')[:18]
+        value = str(entity.get('state', 'unknown'))[:12]
+        unit = str(entity.get('unit', ''))[:5]
+        draw.text((x + 60, y_off), label, font=fonts['20'], fill=0)
+        draw.text((x + 270, y_off), f"{value}{unit}", font=fonts['20'], fill=0)
+
+
+def draw_github_widget(draw, fonts, state, x, y):
+    github = state.get('github', {})
+    draw_icon(draw, x, y, "icon_deploy", (50, 50))
+    label = github.get('label', 'GITHUB / DEVOPS')
+    if github.get('stale'):
+        label += " STALE"
+    draw.text((x + 60, y), label, font=fonts['28'], fill=0)
+
+    if github.get('error') and not github.get('repos'):
+        draw.text((x + 60, y + 42), "GitHub data unavailable", font=fonts['24'], fill=0)
+        draw.text((x + 60, y + 72), "Check repos, token, network", font=fonts['20'], fill=0)
+        return
+
+    repos = github.get('repos', [])
+    if not repos:
+        draw.text((x + 60, y + 42), "No repositories configured", font=fonts['24'], fill=0)
+        return
+
+    for idx, repo in enumerate(repos[:3]):
+        y_off = y + 38 + idx * 30
+        name = str(repo.get('repo', 'repo')).split('/')[-1][:16]
+        status = str(repo.get('workflow_status', 'unknown'))[:10]
+        draw.text((x + 60, y_off), name, font=fonts['20'], fill=0)
+        draw.text((x + 220, y_off), f"PR {repo.get('pulls', 0)} I {repo.get('issues', 0)}", font=fonts['20'], fill=0)
+        draw.text((x + 330, y_off), status, font=fonts['20'], fill=0)
+
 def draw_gmail_widget(draw, fonts, state, x, y):
     draw_icon(draw, x, y, "icon_mail", (60, 60))
     draw.text((x + 80, y + 10), f"Unread Inbox: {state['gmail_unread']}", font=fonts['35'], fill=0)
@@ -459,5 +552,9 @@ def draw_slot(widget_id, Himage, draw, fonts, state, x, y, clear_rect=None):
         draw_spotify_widget(Himage, draw, fonts, state, x, y)
     elif widget_id == 'time_progress':
         draw_time_progress_widget(draw, fonts, state, x, y)
-
-
+    elif widget_id == 'calendar':
+        draw_calendar_widget(draw, fonts, state, x, y)
+    elif widget_id == 'homeassistant':
+        draw_homeassistant_widget(draw, fonts, state, x, y)
+    elif widget_id == 'github':
+        draw_github_widget(draw, fonts, state, x, y)

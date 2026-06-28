@@ -36,12 +36,13 @@ The dashboard may create local runtime files such as:
 - `usage.json`
 - `limits.json`
 - `*.log`
+- Home Assistant and GitHub tokens saved inside `dashboard_config.json`
 
-These files are ignored by git and should stay local to the Pi. Review logs before sharing them, because provider errors can include account identifiers or request details.
+These files are ignored by git and should stay local to the Pi. Review logs before sharing them, because provider errors can include account identifiers or request details. The configurator debug bundle redacts obvious token and key fields, but still review it before attaching it to an issue.
 
 ## Web Configurator
 
-`config_server.py` has no login system. Run it only on a trusted LAN, preferably only while configuring the dashboard.
+`config_server.py` has no login system. Run it only on a trusted LAN, preferably only while configuring the dashboard. Its debug bundle endpoint is intended for local troubleshooting and should not be exposed publicly.
 
 Safer default:
 

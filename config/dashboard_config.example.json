@@ -1,5 +1,6 @@
 {
-  "version": 1,
+  "version": 2,
+  "active_profile": "home",
   "location": {
     "lat": 44.8240855,
     "lon": 20.4934273
@@ -11,16 +12,19 @@
     "antigravity": false,
     "claude": false,
     "openai": false,
-    "spotify": false
+    "spotify": false,
+    "calendar": false,
+    "homeassistant": false,
+    "github": false
   },
   "integrations": {
     "bambu": {
-      "ip": "",
+      "ip": "192.168....",
       "serial": "",
       "access_code": ""
     },
     "roborock": {
-      "email": ""
+      "email": "email..."
     },
     "lastfm": {
       "api_key": "",
@@ -34,13 +38,224 @@
         "gpt-5.3-codex",
         "codex-mini-latest"
       ]
+    },
+    "calendar": {
+      "label": "CALENDAR",
+      "urls": [],
+      "path": "",
+      "lookahead_days": 14,
+      "max_events": 3
+    },
+    "homeassistant": {
+      "base_url": "",
+      "token": "",
+      "entities": []
+    },
+    "github": {
+      "label": "GITHUB / DEVOPS",
+      "token": "",
+      "repositories": []
+    }
+  },
+  "regions": {
+    "left_top": {
+      "label": "Left top",
+      "description": "Upper-left rotating widget card.",
+      "type": "wide_card",
+      "x": 20,
+      "y": 20,
+      "w": 413,
+      "h": 125,
+      "dynamic": true
+    },
+    "left_middle": {
+      "label": "Left middle",
+      "description": "Center-left rotating widget card.",
+      "type": "wide_card",
+      "x": 20,
+      "y": 170,
+      "w": 413,
+      "h": 145,
+      "dynamic": true
+    },
+    "left_bottom": {
+      "label": "Left bottom",
+      "description": "Lower-left rotating widget card.",
+      "type": "wide_card",
+      "x": 20,
+      "y": 340,
+      "w": 413,
+      "h": 130,
+      "dynamic": true
+    },
+    "weather": {
+      "label": "Weather",
+      "description": "Fixed weather, AQI, wind, and forecast region.",
+      "type": "large_panel",
+      "x": 473,
+      "y": 10,
+      "w": 413,
+      "h": 460,
+      "dynamic": false
+    },
+    "clock": {
+      "label": "Clock",
+      "description": "Fixed time and date header.",
+      "type": "header",
+      "x": 936,
+      "y": 10,
+      "w": 404,
+      "h": 210,
+      "dynamic": false
+    },
+    "right_middle": {
+      "label": "Right middle",
+      "description": "Large right-side rotating widget card.",
+      "type": "wide_card",
+      "x": 936,
+      "y": 240,
+      "w": 404,
+      "h": 130,
+      "dynamic": true
+    },
+    "gmail": {
+      "label": "Gmail",
+      "description": "Fixed unread-mail summary.",
+      "type": "status_tile",
+      "x": 936,
+      "y": 400,
+      "w": 404,
+      "h": 70,
+      "dynamic": false
+    }
+  },
+  "profiles": {
+    "home": {
+      "label": "Home",
+      "description": "The default mixed home dashboard.",
+      "slots": {
+        "left_top": {
+          "widgets": [
+            "strava",
+            "sysload",
+            "calendar"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_middle": {
+          "widgets": [
+            "bambu",
+            "crypto",
+            "homeassistant"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_bottom": {
+          "widgets": [
+            "roborock",
+            "antigravity",
+            "ping"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "right_middle": {
+          "widgets": [
+            "ai_usage",
+            "spotify",
+            "time_progress",
+            "github"
+          ],
+          "rotate": false,
+          "seconds": 300
+        }
+      }
+    },
+    "work": {
+      "label": "Work / IT",
+      "description": "Service, deploy, calendar, and usage focused layout.",
+      "slots": {
+        "left_top": {
+          "widgets": [
+            "github",
+            "calendar"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_middle": {
+          "widgets": [
+            "homeassistant",
+            "sysload"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_bottom": {
+          "widgets": [
+            "ping",
+            "crypto"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "right_middle": {
+          "widgets": [
+            "ai_usage",
+            "time_progress"
+          ],
+          "rotate": true,
+          "seconds": 300
+        }
+      }
+    },
+    "focus": {
+      "label": "Focus",
+      "description": "Low-noise layout for time, calendar, and essentials.",
+      "slots": {
+        "left_top": {
+          "widgets": [
+            "calendar",
+            "time_progress"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_middle": {
+          "widgets": [
+            "homeassistant",
+            "sysload"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "left_bottom": {
+          "widgets": [
+            "ping",
+            "sysload"
+          ],
+          "rotate": false,
+          "seconds": 300
+        },
+        "right_middle": {
+          "widgets": [
+            "spotify",
+            "ai_usage"
+          ],
+          "rotate": true,
+          "seconds": 600
+        }
+      }
     }
   },
   "slots": {
     "left_top": {
       "widgets": [
         "strava",
-        "sysload"
+        "sysload",
+        "calendar"
       ],
       "rotate": false,
       "seconds": 300
@@ -48,7 +263,8 @@
     "left_middle": {
       "widgets": [
         "bambu",
-        "crypto"
+        "crypto",
+        "homeassistant"
       ],
       "rotate": false,
       "seconds": 300
@@ -66,10 +282,31 @@
       "widgets": [
         "ai_usage",
         "spotify",
-        "time_progress"
+        "time_progress",
+        "github"
       ],
       "rotate": false,
       "seconds": 300
     }
+  },
+  "refresh": {
+    "weather": 600,
+    "clock": 60,
+    "gmail": 300,
+    "strava": 900,
+    "sysload": 30,
+    "bambu": 15,
+    "crypto": 600,
+    "roborock": 60,
+    "antigravity": 60,
+    "ping": 20,
+    "claude": 600,
+    "openai": 600,
+    "ai_usage": 600,
+    "spotify": 20,
+    "time_progress": 60,
+    "calendar": 900,
+    "homeassistant": 60,
+    "github": 300
   }
 }

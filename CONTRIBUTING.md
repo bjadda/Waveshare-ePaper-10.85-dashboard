@@ -21,7 +21,7 @@ Please include:
 - Whether the systemd service or foreground `python3 main.py` run failed.
 - The widget or integration involved.
 - The smallest config snippet that reproduces the issue, with secrets removed.
-- Relevant logs from `journalctl -u epaper-dashboard -f` or `~/dashboard/dashboard.log`.
+- Relevant logs from `journalctl -u epaper-dashboard -f`, `~/dashboard/dashboard.log`, or the configurator redacted debug bundle.
 
 Do not paste tokens, API keys, OAuth callback URLs, local account emails, printer access codes, or full config files containing secrets.
 
@@ -74,7 +74,7 @@ For display-driver or partial-refresh changes, include:
 - Keep PRs focused on one behavior or cleanup.
 - Prefer clear names over clever abstractions.
 - Keep root files minimal. Put detailed references in `docs/`.
-- Update `config/dashboard_config.example.json` when config shape changes.
+- Update `dashboard/dashboard_registry.py` and regenerate `config/dashboard_config.example.json` when widget, profile, region, or refresh defaults change.
 - Update `README.md` only for the short path; put detailed setup in `docs/WIDGETS.md` and visual asset guidance in `docs/ASSETS.md`.
 - Preserve local-only secret files in `.gitignore`.
 
