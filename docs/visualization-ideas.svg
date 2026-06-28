@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 1400 760">
+  <title id="title">Waveshare dashboard visualization ideas</title>
+  <desc id="desc">Four monochrome e-paper layout concepts for personal life, work and IT architecture, home operations, and focus dashboards.</desc>
+  <defs>
+    <style>
+      .paper { fill: #f7f7f1; }
+      .ink { fill: #111; }
+      .muted { fill: #555; }
+      .line { fill: none; stroke: #111; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .thin { fill: none; stroke: #111; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .dash { fill: none; stroke: #111; stroke-width: 2; stroke-dasharray: 8 8; }
+      .panel { fill: #fff; stroke: #111; stroke-width: 3; rx: 14; }
+      .card { fill: #f7f7f1; stroke: #111; stroke-width: 2; rx: 10; }
+      .title { font: 700 30px Arial, sans-serif; fill: #111; }
+      .label { font: 700 18px Arial, sans-serif; fill: #111; }
+      .small { font: 14px Arial, sans-serif; fill: #333; }
+      .mono { font: 700 16px Consolas, monospace; fill: #111; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="760" class="paper"/>
+  <text x="48" y="58" class="title">Possible 10.85-inch e-paper views</text>
+  <text x="48" y="86" class="small">Composable regions: the same physical screen can become personal, work, home, or focus dashboards.</text>
+
+  <g transform="translate(48 124)">
+    <rect class="panel" width="632" height="274"/>
+    <text x="24" y="42" class="label">Personal dayboard</text>
+    <text x="24" y="68" class="small">family, weather, calendar, commute, training</text>
+    <rect x="24" y="92" width="176" height="142" class="card"/>
+    <text x="44" y="126" class="mono">07:30</text>
+    <text x="44" y="152" class="small">School dropoff</text>
+    <text x="44" y="178" class="small">Rain at 16:00</text>
+    <path d="M44 206h122" class="thin"/>
+    <path d="M44 220h76" class="thin"/>
+
+    <rect x="224" y="92" width="176" height="142" class="card"/>
+    <circle cx="266" cy="134" r="24" class="thin"/>
+    <path d="M266 98v18M266 152v18M230 134h18M284 134h18" class="thin"/>
+    <text x="246" y="190" class="mono">8 C</text>
+    <text x="246" y="214" class="small">wind 6 m/s</text>
+
+    <rect x="424" y="92" width="176" height="142" class="card"/>
+    <text x="448" y="126" class="mono">Bike</text>
+    <path d="M454 190c24-58 52 4 78-42s42 8 54-12" class="line"/>
+    <path d="M448 214h126" class="thin"/>
+  </g>
+
+  <g transform="translate(720 124)">
+    <rect class="panel" width="632" height="274"/>
+    <text x="24" y="42" class="label">Work / IT architect view</text>
+    <text x="24" y="68" class="small">service maps, incidents, cost, calendar focus</text>
+    <rect x="24" y="92" width="228" height="142" class="card"/>
+    <circle cx="74" cy="138" r="20" class="thin"/>
+    <circle cx="164" cy="138" r="20" class="thin"/>
+    <circle cx="118" cy="194" r="20" class="thin"/>
+    <path d="M94 138h50M86 154l20 24M152 154l-20 24" class="thin"/>
+    <text x="42" y="224" class="small">API -> workers -> DB</text>
+
+    <rect x="276" y="92" width="150" height="142" class="card"/>
+    <text x="300" y="128" class="mono">SLO</text>
+    <text x="300" y="164" class="title">99.94</text>
+    <text x="300" y="198" class="small">latency p95 ok</text>
+
+    <rect x="450" y="92" width="150" height="142" class="card"/>
+    <text x="474" y="128" class="mono">Next</text>
+    <text x="474" y="158" class="small">Design review</text>
+    <text x="474" y="184" class="small">Deploy freeze</text>
+    <path d="M474 210h82" class="thin"/>
+  </g>
+
+  <g transform="translate(48 438)">
+    <rect class="panel" width="632" height="274"/>
+    <text x="24" y="42" class="label">Home operations</text>
+    <text x="24" y="68" class="small">network, power, printer, vacuum, sensors</text>
+    <rect x="24" y="92" width="176" height="142" class="card"/>
+    <text x="48" y="126" class="mono">LAN</text>
+    <path d="M52 178a70 70 0 0 1 116 0" class="thin"/>
+    <path d="M76 196a42 42 0 0 1 68 0" class="thin"/>
+    <circle cx="110" cy="214" r="5" class="ink"/>
+
+    <rect x="224" y="92" width="176" height="142" class="card"/>
+    <text x="248" y="126" class="mono">Energy</text>
+    <path d="M248 204h124" class="thin"/>
+    <path d="M248 204l22-42 28 20 24-54 32 76 18-30" class="line"/>
+
+    <rect x="424" y="92" width="176" height="142" class="card"/>
+    <text x="448" y="126" class="mono">Devices</text>
+    <rect x="448" y="150" width="54" height="44" class="thin"/>
+    <circle cx="542" cy="172" r="24" class="thin"/>
+    <text x="448" y="218" class="small">print 68% / docked</text>
+  </g>
+
+  <g transform="translate(720 438)">
+    <rect class="panel" width="632" height="274"/>
+    <text x="24" y="42" class="label">Focus and learning</text>
+    <text x="24" y="68" class="small">deep work, reading queue, habits, recovery</text>
+    <rect x="24" y="92" width="176" height="142" class="card"/>
+    <text x="48" y="126" class="mono">Focus</text>
+    <circle cx="112" cy="174" r="44" class="thin"/>
+    <path d="M112 130v44l28 18" class="line"/>
+
+    <rect x="224" y="92" width="176" height="142" class="card"/>
+    <text x="248" y="126" class="mono">Reading</text>
+    <path d="M250 158h120M250 184h96M250 210h132" class="thin"/>
+    <path d="M372 148v74" class="dash"/>
+
+    <rect x="424" y="92" width="176" height="142" class="card"/>
+    <text x="448" y="126" class="mono">Habits</text>
+    <g transform="translate(448 150)">
+      <rect width="18" height="18" class="ink"/><rect x="26" width="18" height="18" class="ink"/><rect x="52" width="18" height="18" class="thin"/><rect x="78" width="18" height="18" class="ink"/>
+      <rect y="30" width="18" height="18" class="thin"/><rect x="26" y="30" width="18" height="18" class="ink"/><rect x="52" y="30" width="18" height="18" class="ink"/><rect x="78" y="30" width="18" height="18" class="thin"/>
+    </g>
+    <text x="448" y="224" class="small">sleep / run / write</text>
+  </g>
+</svg>

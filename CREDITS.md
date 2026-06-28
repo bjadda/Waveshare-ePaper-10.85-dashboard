@@ -1,13 +1,10 @@
 # Credits and Project Changes
 
-This project combines vendor display code, bundled local libraries, and dashboard-specific application work. This file is attribution, not a project license.
+This file records project ownership and the main changes in this branch. It is attribution, not a project license.
 
 ## Credits
 
-- Waveshare: e-paper hardware driver code under `lib/waveshare_epd/`, including the MIT-style permission notice in those source files.
-- Bambu Lab API package authors: bundled local package under `lib/bambulabs_api/`.
-- Raspberry Pi, Waveshare, Open-Meteo, Strava, Last.fm, Roborock, Anthropic Claude, and OpenAI/Codex ecosystems: services and hardware this dashboard integrates with.
-- GitHub Copilot assisted with the Raspberry Pi installer flow in [PR #2](https://github.com/bjadda/Waveshare-ePaper-10.85-dashboard/pull/2).
+- Original repository owner: [bjadda](https://github.com/bjadda).
 
 ## What This Dashboard Adds
 

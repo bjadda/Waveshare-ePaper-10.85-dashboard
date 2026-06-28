@@ -30,6 +30,19 @@
 * **Home & Device Widgets:** Weather, AQI, Strava, Bambu Lab, Roborock, Spotify via Last.fm, Gmail, system load, crypto, and network ping.
 * **Pi-Friendly Runtime:** Plain Python, systemd autostart, no frontend build chain on the device.
 
+## Visualization Ideas
+
+![Four e-paper dashboard concept layouts for personal, work, home operations, and focus dashboards](docs/visualization-ideas.svg)
+
+The same slot system can support layouts beyond the current home dashboard:
+
+* **Personal dayboard:** family calendar, commute/weather, package status, training load, chores, and meal reminders.
+* **Work / IT architect:** service dependency map, SLO health, incident queue, deploy windows, cloud spend, focus blocks, and next architecture review.
+* **Home operations:** network health, power/solar use, sensor alerts, printer/vacuum state, NAS capacity, and backup status.
+* **Focus and learning:** deep-work timer, reading queue, habit streaks, recovery metrics, language practice, and daily notes.
+
+The visual source is [`docs/visualization-ideas.svg`](docs/visualization-ideas.svg), so it can be edited in plain text.
+
 ---
 
 ## Quick Install (Recommended)
@@ -115,7 +128,7 @@ The **patched** version of the epd10in85 library with fixed partial refresh issu
 
 ## Credits and Changes
 
-Credit is tracked in [`CREDITS.md`](CREDITS.md). In short: Waveshare provides the display driver base, bundled local libraries keep the Pi install practical, GitHub Copilot assisted the installer PR, and this dashboard adds the modular widget system, runtime JSON config, web configurator, and partial-refresh patch.
+Project credit is tracked in [`CREDITS.md`](CREDITS.md), which names [bjadda](https://github.com/bjadda) as the original repository owner. This branch adds the modular widget system, runtime JSON config, web configurator, partial-refresh patch, and the visual dashboard ideas shown above.
 
 ---
 ## Configuration & Widget Setup
